@@ -54,7 +54,7 @@ Web app privée de blind test entre potes (parties à distance via Discord). **S
    - **APIs used** : cocher **Web API** uniquement (ne PAS cocher Web Playback SDK).
    - **Redirect URIs** (ajouter les deux) :
      - `http://127.0.0.1:5500/host.html` (dev local)
-     - `https://blindie-app.netlify.app/host.html` (prod) — remplace par ta propre URL Netlify
+     - `https://blindie.christophe.online/host.html` (prod) — remplace par ta propre URL Netlify
 3. Save → copie le **Client ID** (pas besoin du secret, on utilise PKCE + state).
 4. Colle le Client ID dans [`js/config.js`](js/config.js) (`spotifyConfig.clientId`) et adapte `redirectUri` à ton URL Netlify.
 
@@ -101,7 +101,7 @@ export const firebaseConfig = {
 
 export const spotifyConfig = {
   clientId: "<ton client id>",
-  redirectUri: "https://blindie-app.netlify.app/host.html",
+  redirectUri: "https://blindie.christophe.online/host.html",
   scopes: [
     "playlist-read-private",
     "playlist-read-collaborative",
@@ -109,7 +109,7 @@ export const spotifyConfig = {
 };
 
 export const appConfig = {
-  baseUrl: "https://blindie-app.netlify.app",
+  baseUrl: "https://blindie.christophe.online",
   defaultRoundDurationSeconds: 30,
   pointsTitle: 1,
   pointsArtist: 1,

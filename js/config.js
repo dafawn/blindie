@@ -18,7 +18,7 @@ export const firebaseConfig = {
 // trailing slash).
 export const spotifyConfig = {
   clientId: "27e33cf995d94c8480ffbaf09a019ce4",
-  redirectUri: "https://blindie-app.netlify.app/host.html",
+  redirectUri: "https://blindie.christophe.online/host.html",
   scopes: [
     "playlist-read-private",
     "playlist-read-collaborative",
@@ -27,7 +27,7 @@ export const spotifyConfig = {
 
 // --- App ---
 export const appConfig = {
-  baseUrl: "https://blindie-app.netlify.app",
+  baseUrl: "https://blindie.christophe.online",
   defaultRoundDurationSeconds: 30,
   pointsTitle: 1,
   pointsArtist: 1,
@@ -37,15 +37,21 @@ export const appConfig = {
   previewMatchThreshold: 0.65,
 };
 
-// --- Auto-détection pour le dev local ---
-// Quand on ouvre l'app sur 127.0.0.1 / localhost (Live Server, npx serve…),
-// on bascule automatiquement les URLs en local. Pratique pour développer
-// sans avoir à modifier ce fichier à chaque déploiement.
-const isLocalhost = typeof window !== 'undefined' &&
-  /^(127\.0\.0\.1|localhost|\[::1\])$/.test(window.location.hostname);
-
-if (isLocalhost) {
-  const local = window.location.origin;
-  spotifyConfig.redirectUri = `${local}/host.html`;
-  appConfig.baseUrl = local;
+// --- Adaptation automatique à l'adresse servie ---
+// L'app répond sous plusieurs origines : le domaine personnalisé,
+// l'adresse *.netlify.app, et localhost en développement. Le redirectUri
+// et les liens d'invitation se déduisent donc de l'origine courante au
+// lieu d'être écrits en dur.
+//
+// Sans ça, un hôte arrivé par une adresse est renvoyé par Spotify vers une
+// AUTRE origine — or le verifier PKCE est rangé en sessionStorage, qui est
+// cloisonné par origine. Il est donc introuvable au retour, et la connexion
+// échoue sans message clair.
+//
+// ⚠️ Chaque origine doit être déclarée dans le dashboard Spotify Developer,
+//    section Redirect URIs, sous la forme <origine>/host.html
+if (typeof window !== 'undefined' && window.location.origin) {
+  const origin = window.location.origin;
+  spotifyConfig.redirectUri = `${origin}/host.html`;
+  appConfig.baseUrl = origin;
 }
