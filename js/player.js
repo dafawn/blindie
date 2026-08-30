@@ -15,7 +15,7 @@ import { db } from './firebase.js';
 import {
   escapeHtml, formatArtists, safeImageUrl, safeExternalUrl,
   requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
-  setClockOffset, serverNow, clockOffsetMs,
+  setClockOffset, serverNow, clockOffsetMs, clockIsCalibrated,
 } from './utils.js';
 import { appConfig } from './config.js';
 
@@ -42,7 +42,9 @@ function deplacerFocus(section) {
   const cible = section?.querySelector('h2, h3, [autofocus]');
   if (!cible) return;
   if (!cible.hasAttribute('tabindex')) cible.setAttribute('tabindex', '-1');
-  cible.focus({ preventScroll: false });
+  // preventScroll : le focus sert à l'annonce, pas à la navigation —
+  // il ne doit pas faire sauter la page sous le doigt.
+  cible.focus({ preventScroll: true });
 }
 
 // === State ===
@@ -169,10 +171,15 @@ function majDebug() {
       'padding:.5rem .7rem;border-top:1px solid #35617F;white-space:pre;overflow-x:auto';
     document.body.appendChild(el);
   }
+  // L'écart n'est mesuré qu'une fois la partie rejointe : afficher "+0.0 s"
+  // avant laisserait croire à une horloge vérifiée alors qu'elle ne l'est pas.
   const ecart = clockOffsetMs();
+  const ecartTexte = clockIsCalibrated()
+    ? `${ecart >= 0 ? '+' : ''}${(ecart / 1000).toFixed(1)} s`
+    : 'NON MESURÉ — rejoins la partie';
   const depuis = dernierSnapshotMs ? Math.round((Date.now() - dernierSnapshotMs) / 100) / 10 : null;
   el.textContent =
-    `écart horloge : ${ecart >= 0 ? '+' : ''}${(ecart / 1000).toFixed(1)} s` +
+    `écart horloge : ${ecartTexte}` +
     `   ·   statut : ${dernierStatut}` +
     `   ·   dernier snapshot : ${depuis === null ? '—' : depuis + ' s'}` +
     `\nround ${state.currentRoundIndex}   ·   son ${state.audioUnlocked ? 'débloqué' : 'BLOQUÉ'}` +

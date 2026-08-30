@@ -733,11 +733,20 @@ input::placeholder { color: #8478a0; }
    leur bordure ; boutons et liens, eux, n'avaient rien de garanti. */
 .btn:focus-visible,
 a:focus-visible,
-[tabindex]:focus-visible,
+[tabindex="0"]:focus-visible,
 summary:focus-visible {
   outline: 3px solid var(--neon-cyan);
   outline-offset: 3px;
   border-radius: 6px;
+}
+
+/* Les titres reçoivent le focus par programme au changement d'écran, pour que
+   les lecteurs d'écran annoncent le nouveau contenu. C'est une cible de focus,
+   pas une commande : elle ne doit rien afficher. Sans ce garde-fou, un cadre
+   cyan encadrait le titre de chaque écran, sur toute sa largeur. */
+[tabindex="-1"]:focus,
+[tabindex="-1"]:focus-visible {
+  outline: none;
 }
 
 /* === Mouvement réduit === */

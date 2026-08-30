@@ -58,7 +58,9 @@ function showStep(name) {
     const cible = section?.querySelector('h2, h3');
     if (cible) {
       if (!cible.hasAttribute('tabindex')) cible.setAttribute('tabindex', '-1');
-      cible.focus({ preventScroll: false });
+      // preventScroll : le focus sert à l'annonce, pas à la navigation —
+      // il ne doit pas faire sauter la page sous le doigt.
+      cible.focus({ preventScroll: true });
     }
   }
 }
