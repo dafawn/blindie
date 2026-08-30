@@ -7,7 +7,27 @@ score, accessibilité, coût, déploiement. Périmètre : les 12 fichiers source
 Les ratios de contraste, les cas de score et le modèle de coût Firestore ont été **calculés
 en exécutant le code du dépôt**, pas estimés.
 
-**Bilan : 2 critiques · 9 majeurs · 23 mineurs · 6 défenses vérifiées comme solides.**
+**Bilan : 2 critiques · 10 majeurs · 23 mineurs · 6 défenses vérifiées comme solides.**
+
+> **État au 30 août 2026 — les 9 points du plan sont corrigés** (commit `3382025`,
+> 14 fichiers, +748/−295). Le moteur de score est couvert par 53 cas de test
+> (`node tools/test-scoring.mjs`). Les trois pages ont été chargées dans Chromium
+> avec des doublures Firebase pour vérifier qu'elles démarrent sans erreur, et les
+> contrastes ont été mesurés sur le rendu réel, arrêts de dégradé compris.
+>
+> Sur les 12 constats critiques et majeurs, **11 sont corrigés**. Le douzième —
+> « l'hôte n'écoute jamais le document room » — reste ouvert : il ne figurait pas
+> dans le plan en neuf points et relève d'un refactor de l'état côté hôte, pas d'un
+> correctif. Son effet le plus vicieux est atténué (un `lockRound` raté et un
+> listener mort se signalent désormais à l'écran).
+>
+> Côté mineurs : 16 des 23 sont traités. Restent le déplacement du focus, le Wake
+> Lock, l'usurpation de `playerName`, les bornes de taille dans les règles Firestore,
+> la pastille Spotify menteuse, la validation du lien Apple Music, et le cas des
+> previews Netlify (documenté au README §10, comportement inchangé).
+>
+> Le diagnostic ci-dessous est conservé tel qu'écrit, au présent : il décrit l'état
+> de `main` à `b4c663b`.
 
 ---
 
