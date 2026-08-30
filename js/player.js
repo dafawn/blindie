@@ -158,6 +158,12 @@ function banner(msg, isError) {
 const DEBUG = new URLSearchParams(window.location.search).has('debug');
 let dernierSnapshotMs = null;
 let dernierStatut = '—';
+// Délai réel entre l'écriture du round par l'hôte (horodatage serveur) et son
+// arrivée ici. C'est le chiffre qui départage "Firestore est lent" de
+// "l'écran met du temps à réagir".
+let propagationS = null;
+let arriveeRoundS = null;   // temps écoulé depuis le chargement de la page
+const chargePageMs = Date.now();
 
 function majDebug() {
   if (!DEBUG) return;
@@ -179,8 +185,9 @@ function majDebug() {
     : 'NON MESURÉ — rejoins la partie';
   const depuis = dernierSnapshotMs ? Math.round((Date.now() - dernierSnapshotMs) / 100) / 10 : null;
   el.textContent =
-    `écart horloge : ${ecartTexte}` +
-    `   ·   statut : ${dernierStatut}` +
+    `PROPAGATION : ${propagationS === null ? '—' : propagationS.toFixed(1) + ' s'}` +
+    `   ·   round reçu à T+${arriveeRoundS === null ? '—' : arriveeRoundS.toFixed(1) + ' s'}` +
+    `\nécart horloge : ${ecartTexte}   ·   statut : ${dernierStatut}` +
     `   ·   dernier snapshot : ${depuis === null ? '—' : depuis + ' s'}` +
     `\nround ${state.currentRoundIndex}   ·   son ${state.audioUnlocked ? 'débloqué' : 'BLOQUÉ'}` +
     `   ·   piste ${state.currentTrackPublic ? 'chargée' : '—'}`;
@@ -196,11 +203,13 @@ async function attachListeners() {
   if (listenersAttaches) return;
   listenersAttaches = true;
 
-  // Cale l'horloge AVANT d'écouter : le premier snapshot peut déjà être un
-  // round en cours, et son timing dépend de cette mesure.
-  const mesure = await measureClockOffset(state.roomId, state.uid);
-  if (mesure) setClockOffset(mesure.serverMs, mesure.localMs);
-  majDebug();
+  // La mesure d'horloge ne doit PAS retarder l'enregistrement des listeners :
+  // tant qu'ils ne sont pas posés, un changement de round passe inaperçu.
+  // Elle tourne donc en parallèle, et le timing se corrige dès qu'elle arrive.
+  measureClockOffset(state.roomId, state.uid).then(m => {
+    if (m) setClockOffset(m.serverMs, m.localMs);
+    majDebug();
+  });
 
   listenRoom(state.roomId, async room => {
     if (!room) {
@@ -276,6 +285,13 @@ async function handleRoomUpdate(room) {
       state.roundDurationMs = (room.settings?.roundDurationSeconds
                                || appConfig.defaultRoundDurationSeconds) * 1000;
       if (room.currentRoundIndex !== state.currentRoundIndex) {
+        // Écart entre l'instant où l'hôte a écrit le round (heure serveur) et
+        // maintenant : le temps de propagation réel, sans interprétation.
+        if (state.roundStartedAtMs) {
+          propagationS = (serverNow() - state.roundStartedAtMs) / 1000;
+        }
+        arriveeRoundS = (Date.now() - chargePageMs) / 1000;
+        majDebug();
         state.currentRoundIndex = room.currentRoundIndex;
         state.hasSubmittedThisRound = false;
         state.currentTrackPublic = null;
