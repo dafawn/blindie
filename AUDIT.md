@@ -9,25 +9,39 @@ en exécutant le code du dépôt**, pas estimés.
 
 **Bilan : 2 critiques · 10 majeurs · 23 mineurs · 6 défenses vérifiées comme solides.**
 
-> **État au 30 août 2026 — les 9 points du plan sont corrigés** (commit `3382025`,
-> 14 fichiers, +748/−295). Le moteur de score est couvert par 53 cas de test
-> (`node tools/test-scoring.mjs`). Les trois pages ont été chargées dans Chromium
-> avec des doublures Firebase pour vérifier qu'elles démarrent sans erreur, et les
-> contrastes ont été mesurés sur le rendu réel, arrêts de dégradé compris.
+> **État au 30 août 2026 — les 35 constats sont traités.** Branche
+> `claude/audit-accessibilite-app-3p3y6w`, trois commits jusqu'à `19903c1`.
 >
-> Sur les 12 constats critiques et majeurs, **11 sont corrigés**. Le douzième —
-> « l'hôte n'écoute jamais le document room » — reste ouvert : il ne figurait pas
-> dans le plan en neuf points et relève d'un refactor de l'état côté hôte, pas d'un
-> correctif. Son effet le plus vicieux est atténué (un `lockRound` raté et un
-> listener mort se signalent désormais à l'écran).
+> Deux suites de tests en place : 53 cas sur le moteur de score
+> (`node tools/test-scoring.mjs`) et 30 cas sur les règles Firestore, exécutés
+> contre l'émulateur (`tools/test-rules.mjs`, cf. README §7). Les trois pages ont
+> été chargées dans Chromium avec des doublures Firebase pour vérifier qu'elles
+> démarrent sans erreur, et les contrastes ont été mesurés sur le rendu réel,
+> arrêts de dégradé compris.
 >
-> Côté mineurs : 16 des 23 sont traités. Restent le déplacement du focus, le Wake
-> Lock, l'usurpation de `playerName`, les bornes de taille dans les règles Firestore,
-> la pastille Spotify menteuse, la validation du lien Apple Music, et le cas des
-> previews Netlify (documenté au README §10, comportement inchangé).
+> **Il reste quatre étapes, dans cet ordre :**
 >
-> Le diagnostic ci-dessous est conservé tel qu'écrit, au présent : il décrit l'état
-> de `main` à `b4c663b`.
+> 1. **Déployer les règles Firestore** — indispensable, les nouvelles bornes de
+>    taille n'existent que dans le fichier tant qu'elles ne sont pas publiées.
+>    Console *Firestore → Rules*, coller `firestore.rules`, Publier. Ou
+>    `npx firebase-tools login` puis
+>    `npx firebase-tools deploy --only firestore:rules`.
+> 2. **Créer la politique TTL** — *Firestore → Time-to-live → Create policy*,
+>    collection group `rooms`, champ `expiresAt`. Sans elle, les rooms
+>    s'accumulent indéfiniment.
+> 3. **Fusionner la branche dans `main`** — Netlify déploie automatiquement.
+>    Rien à changer côté Spotify, les redirect URIs sont inchangées.
+> 4. **Vérifier** — une partie à deux appareils : fermer l'onglet hôte en plein
+>    round puis rouvrir `/host.html` (la partie doit être retrouvée) ; relancer
+>    la même playlist deux fois (l'ordre doit différer) ; taper « live » comme
+>    réponse (ne doit plus rapporter de point).
+>
+> Les parties en cours au moment du déploiement casseront — les joueurs auront
+> l'ancien JavaScript en cache et l'hôte le nouveau. Sans conséquence, mais
+> déployer entre deux soirées plutôt que pendant.
+>
+> Le diagnostic ci-dessous est conservé tel qu'écrit, au présent : il décrit
+> l'état de `main` à `b4c663b`.
 
 ---
 
