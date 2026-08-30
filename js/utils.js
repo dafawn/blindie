@@ -266,6 +266,43 @@ export function safeExternalUrl(url) {
   return safeImageUrl(url);
 }
 
+// === Horloge serveur ===
+// Le déroulement d'un round est piloté par un horodatage SERVEUR
+// (currentRoundStartedAt). Le comparer à Date.now() revient à faire confiance
+// à l'horloge de l'appareil — or un téléphone qui avance de 30 s suffisait à
+// faire croire au joueur que le round était déjà écoulé : timer à 0, et audio
+// jamais lancé (le garde `elapsed >= 30` se déclenchait immédiatement).
+//
+// On mesure donc une fois l'écart entre l'horloge locale et celle du serveur,
+// et tout le code de timing passe par serverNow().
+let _clockOffsetMs = 0;
+let _clockMeasured = false;
+
+// serverMs : valeur d'un serverTimestamp() résolu.
+// localMs   : instant local correspondant à cette écriture.
+export function setClockOffset(serverMs, localMs) {
+  if (!serverMs || !localMs) return;
+  const offset = serverMs - localMs;
+  // Un écart de plus d'une journée est plus vraisemblablement une donnée
+  // aberrante qu'une horloge réellement décalée : on l'ignore.
+  if (Math.abs(offset) > 24 * 60 * 60 * 1000) return;
+  _clockOffsetMs = offset;
+  _clockMeasured = true;
+}
+
+// L'heure courante exprimée dans le référentiel du serveur.
+export function serverNow() {
+  return Date.now() + _clockOffsetMs;
+}
+
+export function clockOffsetMs() {
+  return _clockOffsetMs;
+}
+
+export function clockIsCalibrated() {
+  return _clockMeasured;
+}
+
 // === Wake Lock ===
 // L'écran du téléphone s'éteint pendant les 30 s d'écoute, obligeant le joueur
 // à le rallumer à chaque round. L'API n'existe pas partout (Safari iOS < 16.4,

@@ -7,7 +7,7 @@
 import { ensureAnonAuth } from './firebase.js';
 import {
   joinRoom, leaveRoom, listenRoom, listenPlayers,
-  submitAnswer, roomExists, fetchTrackByOrder,
+  submitAnswer, roomExists, fetchTrackByOrder, measureClockOffset,
 } from './room.js';
 import { doc, getDoc } from
   "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -15,10 +15,13 @@ import { db } from './firebase.js';
 import {
   escapeHtml, formatArtists, safeImageUrl, safeExternalUrl,
   requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
+  setClockOffset, serverNow, clockOffsetMs,
 } from './utils.js';
 import { appConfig } from './config.js';
 
 const MAX_NAME = appConfig.maxNameLength;
+// Durée d'un extrait iTunes. Au-delà, il n'y a plus rien à jouer.
+const PREVIEW_SECONDS = 30;
 
 const $ = id => document.getElementById(id);
 
@@ -88,7 +91,7 @@ const state = {
   state.name = nameFromSession;
   $('room-tag').textContent = state.roomId;
   $('me-name').textContent = state.name;
-  attachListeners();
+  await attachListeners();
 })();
 
 function askForJoin(prefillCode) {
@@ -120,7 +123,7 @@ function askForJoin(prefillCode) {
       localStorage.setItem('blindie.lastName', name);
       $('room-tag').textContent = code;
       $('me-name').textContent = name;
-      attachListeners();
+      await attachListeners();
     } catch (e) {
       console.error(e);
       showJoinError(e.message || "Erreur de connexion.");
@@ -146,14 +149,51 @@ function banner(msg, isError) {
   el.classList.remove('hidden');
 }
 
+// === Diagnostic (?debug=1) ===
+// Sur un téléphone il n'y a pas de console : sans ce panneau, un décalage
+// d'horloge ou un snapshot en retard est invisible et indiscernable d'une
+// "app lente".
+const DEBUG = new URLSearchParams(window.location.search).has('debug');
+let dernierSnapshotMs = null;
+let dernierStatut = '—';
+
+function majDebug() {
+  if (!DEBUG) return;
+  let el = $('debug-panel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'debug-panel';
+    el.setAttribute('aria-hidden', 'true');
+    el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;' +
+      'background:rgba(10,1,24,.94);color:#8CBEDE;font:11px/1.5 ui-monospace,monospace;' +
+      'padding:.5rem .7rem;border-top:1px solid #35617F;white-space:pre;overflow-x:auto';
+    document.body.appendChild(el);
+  }
+  const ecart = clockOffsetMs();
+  const depuis = dernierSnapshotMs ? Math.round((Date.now() - dernierSnapshotMs) / 100) / 10 : null;
+  el.textContent =
+    `écart horloge : ${ecart >= 0 ? '+' : ''}${(ecart / 1000).toFixed(1)} s` +
+    `   ·   statut : ${dernierStatut}` +
+    `   ·   dernier snapshot : ${depuis === null ? '—' : depuis + ' s'}` +
+    `\nround ${state.currentRoundIndex}   ·   son ${state.audioUnlocked ? 'débloqué' : 'BLOQUÉ'}` +
+    `   ·   piste ${state.currentTrackPublic ? 'chargée' : '—'}`;
+}
+if (DEBUG) setInterval(majDebug, 500);
+
 // === Listeners ===
 // Un seul appel par chargement de page — le garde évite qu'un double-clic sur
 // "Rejoindre" n'installe deux jeux de listeners.
 let listenersAttaches = false;
 
-function attachListeners() {
+async function attachListeners() {
   if (listenersAttaches) return;
   listenersAttaches = true;
+
+  // Cale l'horloge AVANT d'écouter : le premier snapshot peut déjà être un
+  // round en cours, et son timing dépend de cette mesure.
+  const mesure = await measureClockOffset(state.roomId, state.uid);
+  if (mesure) setClockOffset(mesure.serverMs, mesure.localMs);
+  majDebug();
 
   listenRoom(state.roomId, async room => {
     if (!room) {
@@ -163,6 +203,9 @@ function attachListeners() {
       return;
     }
     noteRoomActivity();
+    dernierSnapshotMs = Date.now();
+    dernierStatut = room.status;
+    majDebug();
     await handleRoomUpdate(room);
   }, showConnectionError);
 
@@ -380,7 +423,7 @@ function startPlayerTimer(room) {
   if (!startedAt) return;
   const duration = (room.settings?.roundDurationSeconds || appConfig.defaultRoundDurationSeconds) * 1000;
   const update = () => {
-    const remaining = Math.max(0, Math.round((startedAt + duration - Date.now()) / 1000));
+    const remaining = Math.max(0, Math.round((startedAt + duration - serverNow()) / 1000));
     $('play-timer').textContent = remaining;
     $('play-timer').classList.toggle('danger', remaining <= 5 && remaining > 0);
     if (remaining <= 0) stopTimer();
@@ -523,12 +566,16 @@ function playLocalAudio() {
   state.localAudio.src = track.previewUrl;
   state.localAudio.volume = 1;
 
-  // Seek à partir du début du round host. iTunes previews = 30 s max.
-  const elapsed = state.roundStartedAtMs
-    ? (Date.now() - state.roundStartedAtMs) / 1000
+  // Seek à partir du début du round host, sur l'heure SERVEUR : comparer un
+  // horodatage serveur à l'horloge du téléphone décalait la lecture d'autant
+  // que le téléphone était mal réglé.
+  const brut = state.roundStartedAtMs
+    ? (serverNow() - state.roundStartedAtMs) / 1000
     : 0;
-  if (elapsed >= 30) return;
-  state.localAudio.currentTime = Math.max(0, elapsed);
+  // Une valeur aberrante (horloge non calée, snapshot d'un round ancien) ne
+  // doit pas se traduire par un silence : on repart du début.
+  const elapsed = (brut < 0 || brut > PREVIEW_SECONDS) ? 0 : brut;
+  state.localAudio.currentTime = Math.min(PREVIEW_SECONDS - 0.5, Math.max(0, elapsed));
   state.localAudio.play().catch(err => {
     console.warn('Audio bloqué :', err);
   });

@@ -24,6 +24,7 @@ import {
 import {
   escapeHtml, formatArtists, safeImageUrl, safeExternalUrl, shuffled,
   requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
+  setClockOffset, serverNow,
 } from './utils.js';
 import { appConfig, spotifyConfig } from './config.js';
 
@@ -79,6 +80,12 @@ const state = {
   unsubRoom: null,
   players: [],
   answers: [],
+  // Instant local de démarrage du round, le temps que le serveur renvoie son
+  // propre horodatage et qu'on puisse caler les deux horloges.
+  roundAnchorMs: null,
+  // Début du round dans le référentiel serveur. Estimé au lancement, puis
+  // remplacé par la valeur exacte que renvoie le serveur.
+  roundStartServerMs: null,
   // Réglages écrits dans le doc room à sa création. Le host les relit d'ici
   // plutôt que de retomber sur appConfig : sinon, le jour où la durée devient
   // réglable dans l'UI, l'horloge du host et celle des joueurs divergent.
@@ -124,6 +131,20 @@ function watchRoom(roomId) {
       return;
     }
     state.settings = room.settings || state.settings;
+
+    // Cale l'horloge du host sur celle du serveur. `roundAnchorMs` est
+    // l'instant local juste après la confirmation de startRound ; le
+    // currentRoundStartedAt que le serveur renvoie désigne le même moment.
+    // Sans ça, host et joueurs comptent sur deux horloges différentes.
+    const serveur = room.currentRoundStartedAt?.toMillis?.();
+    if (serveur && room.currentRoundIndex === state.roundIndex) {
+      if (state.roundAnchorMs) {
+        setClockOffset(serveur, state.roundAnchorMs);
+        state.roundAnchorMs = null;   // une seule mesure par round suffit
+      }
+      // Valeur exacte : le décompte s'y recale au tick suivant.
+      state.roundStartServerMs = serveur;
+    }
 
     // Un autre onglet a repris la main : lui seul fait autorité désormais.
     if (room.currentRoundIndex > state.roundIndex && state.step !== 'lobby') {
@@ -268,7 +289,7 @@ async function resumeRound(room) {
   const startedAtMs = room.currentRoundStartedAt?.toMillis?.() || null;
   const durationSec = room.settings?.roundDurationSeconds
                       || appConfig.defaultRoundDurationSeconds;
-  const elapsedSec = startedAtMs ? (Date.now() - startedAtMs) / 1000 : 0;
+  const elapsedSec = startedAtMs ? (serverNow() - startedAtMs) / 1000 : 0;
   const remainingSec = Math.max(0, durationSec - elapsedSec);
 
   if (room.status === 'playing' && remainingSec > 0) {
@@ -287,7 +308,8 @@ async function resumeRound(room) {
     $('btn-stop-audio').disabled = false;
     // startedAtMs peut être null si le timestamp serveur n'est pas encore
     // résolu côté client — on retombe sur l'instant courant.
-    startTimer(startedAtMs ?? Date.now(), durationSec);
+    state.roundStartServerMs = startedAtMs ?? serverNow();
+    startTimer(durationSec);
   } else {
     // status == 'locked' OU 'playing' mais timer écoulé pendant qu'on était
     // refresh (personne pour auto-lock). On lock pour rattraper l'état.
@@ -621,7 +643,8 @@ async function playRound() {
   await startRound(state.roomId, state.roundIndex);
   // Ancre du décompte, prise juste après la confirmation de startRound : c'est
   // ce qui colle au mieux au currentRoundStartedAt que les joueurs vont lire.
-  const roundAnchorMs = Date.now();
+  state.roundAnchorMs = Date.now();
+  state.roundStartServerMs = serverNow();   // estimation, affinée au snapshot
   showStep('playing');
 
   $('round-num').textContent = state.roundIndex + 1;
@@ -645,7 +668,7 @@ async function playRound() {
   try { await state.audio.play(); }
   catch (err) { console.warn('Audio autoplay refusé', err); }
 
-  startTimer(roundAnchorMs, roundDuration());
+  startTimer(roundDuration());
 
   if (state.unsubAnswers) state.unsubAnswers();
   state.unsubAnswers = listenAnswers(state.roomId, state.roundIndex, answers => {
@@ -674,13 +697,18 @@ async function playRound() {
 // `startedAtMs` est l'ancre commune. Au démarrage d'un round c'est l'instant
 // local où startRound() a été confirmé ; à la reprise après refresh c'est le
 // currentRoundStartedAt du serveur, comme côté joueur.
-function startTimer(startedAtMs, durationSeconds) {
+// Le décompte relit son ancre à CHAQUE tick, dans le référentiel serveur.
+// C'est ce qui lui permet de se corriger tout seul : au démarrage d'un round
+// l'ancre n'est qu'une estimation locale, et elle est remplacée par la valeur
+// exacte du serveur dès que le snapshot du doc room arrive.
+function startTimer(durationSeconds) {
   clearInterval(state.timerInterval);
-  const finAt = startedAtMs + durationSeconds * 1000;
   let verrouille = false;
 
   const tick = async () => {
-    const remaining = Math.max(0, Math.ceil((finAt - Date.now()) / 1000));
+    const debut = state.roundStartServerMs;
+    if (debut == null) return;
+    const remaining = Math.max(0, Math.ceil((debut + durationSeconds * 1000 - serverNow()) / 1000));
     $('timer').textContent = remaining;
     $('timer').classList.toggle('danger', remaining <= 5);
     if (remaining > 0 || verrouille) return;
