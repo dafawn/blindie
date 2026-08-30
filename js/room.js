@@ -147,6 +147,32 @@ export async function joinRoom(roomId, playerId, playerName) {
   }
 }
 
+// Écart entre l'horloge de l'appareil et celle du serveur, en millisecondes.
+//
+// On écrit `lastSeen` avec un serverTimestamp() puis on le relit : la valeur
+// obtenue est l'heure du serveur au moment de l'écriture, qu'on compare au
+// milieu de la fenêtre locale encadrant l'aller-retour. Une lecture et une
+// écriture par session — sans commune mesure avec le battement de cœur qu'on
+// a supprimé, et c'est ce qui empêche un téléphone mal réglé de désynchroniser
+// le joueur de plusieurs dizaines de secondes.
+//
+// Renvoie null si la mesure échoue : l'appelant garde alors l'horloge locale.
+export async function measureClockOffset(roomId, playerId) {
+  try {
+    const ref = playerDoc(roomId, playerId);
+    const avant = Date.now();
+    await updateDoc(ref, { lastSeen: serverTimestamp() });
+    const snap = await getDoc(ref);
+    const apres = Date.now();
+    const serveur = snap.data()?.lastSeen?.toMillis?.();
+    if (!serveur) return null;
+    return { serverMs: serveur, localMs: (avant + apres) / 2 };
+  } catch (e) {
+    console.warn('Mesure de l\'écart d\'horloge impossible', e);
+    return null;
+  }
+}
+
 // Quitter une room. Pour ne PAS casser le scoring/scoreboard pendant une
 // partie active, on conserve le doc player pendant les statuts "playing",
 // "locked" et "reveal" — les règles Firestore refusent d'ailleurs un
