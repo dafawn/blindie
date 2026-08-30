@@ -19,10 +19,13 @@ import {
   createRoom, getRoom, addTracksToRoom, fetchRoomTracks,
   startRound, lockRound, revealRound, endGame,
   scoreRound, fetchAnswersForRound,
-  listenPlayers, listenAnswers, deleteRoom,
+  listenPlayers, listenAnswers, listenRoom, deleteRoom,
 } from './room.js';
-import { escapeHtml, formatArtists, safeImageUrl, shuffled } from './utils.js';
-import { appConfig } from './config.js';
+import {
+  escapeHtml, formatArtists, safeImageUrl, safeExternalUrl, shuffled,
+  requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
+} from './utils.js';
+import { appConfig, spotifyConfig } from './config.js';
 
 const $ = id => document.getElementById(id);
 
@@ -43,9 +46,20 @@ function once(btn, handler) {
 // === Step routing ===
 const steps = ['login', 'import', 'lobby', 'playing', 'reveal', 'finished'];
 function showStep(name) {
+  const change = name !== state.step;
   steps.forEach(s => $(`step-${s}`).classList.toggle('hidden', s !== name));
   $('mini-score').classList.toggle('hidden', !['playing', 'reveal'].includes(name));
   state.step = name;
+  // Le focus suit l'écran affiché — sans ça il restait sur le bouton cliqué,
+  // dans une section devenue invisible.
+  if (change) {
+    const section = $(`step-${name}`);
+    const cible = section?.querySelector('h2, h3');
+    if (cible) {
+      if (!cible.hasAttribute('tabindex')) cible.setAttribute('tabindex', '-1');
+      cible.focus({ preventScroll: false });
+    }
+  }
 }
 
 // === State ===
@@ -62,6 +76,7 @@ const state = {
   audio: null,
   unsubPlayers: null,
   unsubAnswers: null,
+  unsubRoom: null,
   players: [],
   answers: [],
   // Réglages écrits dans le doc room à sa création. Le host les relit d'ici
@@ -92,6 +107,39 @@ async function refreshSpotifyChip() {
     chip.textContent = '⏺ Spotify';
     chip.style.cursor = 'default';
   }
+}
+
+// Écoute le document room. L'hôte pilotait jusqu'ici depuis son seul état
+// local, sans jamais relire la vérité serveur : une écriture qui échouait
+// passait inaperçue, et deux onglets ouverts sur la même room pilotaient deux
+// parties concurrentes sur les mêmes données.
+//
+// On ne reconstruit PAS l'UI depuis ce listener — le flux reste piloté par les
+// clics de l'hôte. Il sert à détecter une divergence et à le prévenir.
+function watchRoom(roomId) {
+  if (state.unsubRoom) state.unsubRoom();
+  state.unsubRoom = listenRoom(roomId, room => {
+    if (!room) {
+      showError('round-error', "La room a été supprimée.");
+      return;
+    }
+    state.settings = room.settings || state.settings;
+
+    // Un autre onglet a repris la main : lui seul fait autorité désormais.
+    if (room.currentRoundIndex > state.roundIndex && state.step !== 'lobby') {
+      showError('round-error',
+        `Cette partie est pilotée depuis un autre onglet (elle en est au round ` +
+        `${room.currentRoundIndex + 1}). Ferme celui-ci pour éviter de jouer deux ` +
+        `parties en parallèle sur la même room.`);
+      return;
+    }
+    // Le serveur ne reflète pas l'état local : une écriture a échoué.
+    if (state.step === 'playing' && room.currentRoundIndex !== state.roundIndex) {
+      showError('round-error',
+        "L'état de la partie n'a pas été enregistré côté serveur — les joueurs ne " +
+        "voient pas le même round que toi. Recharge la page pour te resynchroniser.");
+    }
+  }, onListenerError);
 }
 
 // Durée d'un round : celle inscrite dans la room, pas la valeur par défaut.
@@ -143,6 +191,13 @@ const hostSession = {
 
   if (!isLoggedIn()) {
     showStep('login');
+    if (spotifyConfig.isDeployPreview) {
+      showError('login-error',
+        "Cette adresse est une preview de déploiement Netlify : son URL est " +
+        "aléatoire et ne peut pas être déclarée dans le dashboard Spotify, donc " +
+        "la connexion échouera. Utilise le domaine de production, ou " +
+        "127.0.0.1:5500 en local.");
+    }
     $('btn-spotify-login').addEventListener('click', () => loginWithSpotify());
     return;
   }
@@ -176,6 +231,7 @@ async function tryRehydrateHostSession() {
   $('join-url').textContent = rehydratedJoinUrl;
   renderJoinQR(rehydratedJoinUrl);
 
+  watchRoom(savedRoomId);
   state.unsubPlayers = listenPlayers(savedRoomId, players => {
     state.players = players.filter(p => p.id !== state.hostId);
     renderLobbyPlayers();
@@ -397,6 +453,7 @@ $('btn-create-room').addEventListener('click', async () => {
     $('join-url').textContent = joinUrl;
     renderJoinQR(joinUrl);
 
+    watchRoom(roomId);
     state.unsubPlayers = listenPlayers(roomId, players => {
       // Drop the host from the player list (host is signed in anonymously
       // but does not create a player doc, so this is just defensive).
@@ -437,12 +494,15 @@ once($('btn-start-game'), async () => {
   // d'un startGame() séparé qui écrirait un currentRoundStartedAt en double
   // (ce qui désynchronisait l'audio des joueurs sur le round 0).
   state.roundIndex = 0;
+  requestWakeLock();
+  keepWakeLockOnVisibility();
   await playRound();
 });
 
 once($('btn-cancel-room'), async () => {
   if (!confirm("Annuler et supprimer la room ?")) return;
   if (state.unsubPlayers) state.unsubPlayers();
+  if (state.unsubRoom) state.unsubRoom();
   hostSession.clear();
   await deleteRoom(state.roomId);
   window.location.href = './index.html';
@@ -701,6 +761,14 @@ $('btn-stop-audio').addEventListener('click', async () => {
   }
 });
 
+// Le nom affiché à côté d'une réponse vient du document `players`, jamais du
+// champ `playerName` de la réponse : ce dernier est écrit par le joueur, qui
+// peut donc y mettre le pseudo d'un autre et brouiller la lecture de l'écran.
+function nomDuJoueur(answer) {
+  const p = state.players.find(p => p.id === answer.id || p.id === answer.playerId);
+  return p?.name ?? answer.playerName ?? '?';
+}
+
 function renderLiveAnswers() {
   $('answer-count').textContent = state.answers.length;
   if (state.answers.length === 0) {
@@ -712,7 +780,7 @@ function renderLiveAnswers() {
     .map((a, i) => `
       <div class="answer-row">
         <div>
-          <span class="who">#${i + 1} ${escapeHtml(a.playerName)}</span><br>
+          <span class="who">#${i + 1} ${escapeHtml(nomDuJoueur(a))}</span><br>
           <span class="what">
             <small>Titre :</small> ${escapeHtml(a.titleAnswer) || '<em class="muted">—</em>'} ·
             <small>Artiste :</small> ${escapeHtml(a.artistAnswer) || '<em class="muted">—</em>'}
@@ -735,8 +803,9 @@ function doReveal() {
 
   // Apple Music link
   const appleLink = $('reveal-apple-link');
-  if (state.currentTrack.trackViewUrl) {
-    appleLink.href = state.currentTrack.trackViewUrl;
+  const appleUrl = safeExternalUrl(state.currentTrack.trackViewUrl);
+  if (appleUrl) {
+    appleLink.href = appleUrl;
     appleLink.classList.remove('hidden');
   } else {
     appleLink.classList.add('hidden');
@@ -762,7 +831,7 @@ function renderRevealAnswers() {
       return `
         <div class="answer-row ${cls}">
           <div>
-            <span class="who">${escapeHtml(a.playerName)}</span>
+            <span class="who">${escapeHtml(nomDuJoueur(a))}</span>
             <span class="tag" style="margin-left:0.5rem;">${detail}</span><br>
             <span class="what">
               <small>Titre :</small> ${escapeHtml(a.titleAnswer) || '<em class="muted">—</em>'} ·
@@ -790,6 +859,8 @@ async function finishGame() {
   clearInterval(state.timerInterval);
   if (state.audio) state.audio.pause();
   if (state.unsubAnswers) state.unsubAnswers();
+  if (state.unsubRoom) { state.unsubRoom(); state.unsubRoom = null; }
+  releaseWakeLock();
   await endGame(state.roomId);
   showStep('finished');
   renderPodium();

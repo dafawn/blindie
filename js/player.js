@@ -12,7 +12,10 @@ import {
 import { doc, getDoc } from
   "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { db } from './firebase.js';
-import { escapeHtml, formatArtists, safeImageUrl } from './utils.js';
+import {
+  escapeHtml, formatArtists, safeImageUrl, safeExternalUrl,
+  requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
+} from './utils.js';
 import { appConfig } from './config.js';
 
 const MAX_NAME = appConfig.maxNameLength;
@@ -20,8 +23,23 @@ const MAX_NAME = appConfig.maxNameLength;
 const $ = id => document.getElementById(id);
 
 const states = ['join', 'lobby', 'playing', 'reveal', 'finished'];
+let etatCourant = null;
+
 function showState(name) {
+  const change = name !== etatCourant;
   states.forEach(s => $(`state-${s}`).classList.toggle('hidden', s !== name));
+  etatCourant = name;
+  // Au changement d'écran, le focus restait où il était : un lecteur d'écran
+  // continuait d'annoncer l'ancien contenu, et la navigation au clavier
+  // repartait du mauvais endroit.
+  if (change) deplacerFocus($(`state-${name}`));
+}
+
+function deplacerFocus(section) {
+  const cible = section?.querySelector('h2, h3, [autofocus]');
+  if (!cible) return;
+  if (!cible.hasAttribute('tabindex')) cible.setAttribute('tabindex', '-1');
+  cible.focus({ preventScroll: false });
 }
 
 // === State ===
@@ -254,6 +272,7 @@ async function handleRoomUpdate(room) {
     case 'finished':
       stopTimer();
       stopLocalAudio();
+      releaseWakeLock();
       showState('finished');
       $('final-scoreboard').innerHTML = $('scoreboard').innerHTML;
       break;
@@ -418,8 +437,9 @@ async function renderReveal(room) {
 
   // Apple Music link
   const appleLink = $('reveal-apple-link');
-  if (track.trackViewUrl) {
-    appleLink.href = track.trackViewUrl;
+  const appleUrl = safeExternalUrl(track.trackViewUrl);
+  if (appleUrl) {
+    appleLink.href = appleUrl;
     appleLink.classList.remove('hidden');
     appleLink.style.display = '';
   } else {
@@ -472,6 +492,9 @@ function unlockAudio() {
     state.localAudio.pause();
     state.localAudio.muted = false;
     state.audioUnlocked = true;
+    // Le son est débloqué : le joueur va écouter, l'écran ne doit pas s'éteindre.
+    requestWakeLock();
+    keepWakeLockOnVisibility();
     // Bouton lobby : transformation visuelle
     const btn = $('btn-unlock-audio');
     btn.textContent = '🔊 Son activé ✓';

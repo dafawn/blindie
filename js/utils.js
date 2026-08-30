@@ -260,6 +260,44 @@ export function safeImageUrl(url) {
   }
 }
 
+// URL externe destinée à un href. Même exigence que safeImageUrl : https
+// uniquement, ce qui écarte javascript:, data:, blob: et le protocole-relatif.
+export function safeExternalUrl(url) {
+  return safeImageUrl(url);
+}
+
+// === Wake Lock ===
+// L'écran du téléphone s'éteint pendant les 30 s d'écoute, obligeant le joueur
+// à le rallumer à chaque round. L'API n'existe pas partout (Safari iOS < 16.4,
+// Firefox) et le verrou saute dès que l'onglet passe en arrière-plan : d'où la
+// reprise sur visibilitychange.
+let _wakeLock = null;
+
+export async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return false;
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+    return true;
+  } catch {
+    // Refus courant : onglet non visible, batterie faible. Sans gravité.
+    return false;
+  }
+}
+
+export function releaseWakeLock() {
+  try { _wakeLock?.release(); } catch {}
+  _wakeLock = null;
+}
+
+// À appeler une fois : réacquiert le verrou au retour au premier plan.
+export function keepWakeLockOnVisibility() {
+  if (!('wakeLock' in navigator)) return;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && _wakeLock === null) requestWakeLock();
+  });
+}
+
 // === Misc ===
 export function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({

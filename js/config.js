@@ -61,4 +61,11 @@ if (typeof window !== 'undefined' && window.location.origin) {
   const origin = window.location.origin;
   spotifyConfig.redirectUri = `${origin}/host.html`;
   appConfig.baseUrl = origin;
+
+  // Une preview de déploiement Netlify a un hostname aléatoire
+  // (deploy-preview-42--monsite.netlify.app, branche--monsite.netlify.app).
+  // Impossible de la déclarer à l'avance dans le dashboard Spotify : la
+  // connexion y échouera forcément. On le signale plutôt que de laisser
+  // l'hôte face à un "INVALID_CLIENT" sans explication.
+  spotifyConfig.isDeployPreview = /--.*\.netlify\.app$/.test(window.location.hostname);
 }

@@ -209,7 +209,8 @@ npx serve -l 5500
 /js/utils.js             Normalisation, scoring, mélange, safeImageUrl, codes 6c
 /js/host.js              Logique host (flow complet, scoring au reveal)
 /js/player.js            Logique joueur (téléphone)
-/tools/test-scoring.mjs  Banc de test du moteur de score (`node tools/test-scoring.mjs`)
+/tools/test-scoring.mjs  Banc de test du moteur de score
+/tools/test-rules.mjs    Tests des règles Firestore (émulateur)
 /tools/generate-icons.mjs  icon.svg → PNG + favicon.ico (nécessite sharp)
 /icon.svg /favicon.svg   Sources des icônes
 /favicon.ico /icon-192.png /icon-512.png /apple-touch-icon.png
@@ -222,13 +223,26 @@ npx serve -l 5500
 
 ### Lancer les tests
 
-Le moteur de score est la seule partie du code couverte par des tests — c'est
-aussi la seule où un bug est invisible pendant la partie et fausse le
-classement. Aucune dépendance à installer :
+Deux suites, sur les deux endroits où un bug est invisible pendant la partie.
+
+**Moteur de score** — 53 cas, aucune dépendance :
 
 ```bash
 node tools/test-scoring.mjs
 ```
+
+**Règles Firestore** — 30 cas contre l'émulateur. Vérifie le modèle anti-triche
+(un joueur ne peut pas s'écrire de points, ni répondre après le verrou, ni
+dépasser les bornes de taille) :
+
+```bash
+npm i --no-save @firebase/rules-unit-testing firebase
+npx firebase-tools emulators:exec --only firestore --project blindie-test \
+  "node tools/test-rules.mjs"
+```
+
+Les `PERMISSION_DENIED` affichés pendant la passe sont attendus : ce sont les
+refus que les tests provoquent volontairement. Seule la dernière ligne compte.
 
 ## 8. Modèle Firestore
 
@@ -312,15 +326,20 @@ Fait (audit d'août 2026, cf. [`AUDIT.md`](AUDIT.md)) :
 - [x] Purge automatique des rooms via TTL Firestore (cf. §1.7)
 - [x] Libellés de formulaire, contrastes WCAG AA, `prefers-reduced-motion`
 - [x] Manifest PWA (icônes `any` + `maskable` séparées)
+- [x] Le host écoute le doc room : divergence et second onglet détectés
+- [x] Wake Lock pendant les rounds, côté host et côté joueur
+- [x] Focus déplacé sur le titre à chaque changement d'écran
+- [x] Bornes de type et de taille dans les règles Firestore
+- [x] Tests des règles via l'émulateur (`tools/test-rules.mjs`)
+- [x] Le pseudo affiché vient du doc `players`, plus du champ libre de la réponse
+- [x] Un jeton Spotify mort déconnecte au lieu d'afficher « connecté »
+- [x] Liens Apple Music validés (https uniquement)
+- [x] Les previews de déploiement Netlify affichent un message explicite
 
 Reste à faire :
 
-- [ ] Tests d'intégration Firestore via émulateur (`firebase emulators:start`)
 - [ ] CSP avec nonces au lieu de `'unsafe-inline'`
 - [ ] Service worker (le manifest existe, mais l'app n'est pas installable hors ligne)
-- [ ] Wake Lock pendant les rounds — l'écran du téléphone s'éteint pendant l'écoute
-- [ ] Le host n'écoute pas le doc room : deux onglets host pilotent deux parties
-- [ ] Bornes de taille sur `name` / `titleAnswer` / `artistAnswer` dans les règles
 - [ ] Bonus de rapidité au premier à trouver
 - [ ] Choix de la durée du round dans l'UI host
 - [ ] Reveal automatique X secondes après la fin du timer

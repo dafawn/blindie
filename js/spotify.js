@@ -142,7 +142,12 @@ async function refreshAccessToken(tok) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
-  if (!r.ok) throw new Error("Refresh token a échoué — relance le login.");
+  if (!r.ok) {
+    // Le jeton est mort : on le jette, sinon isLoggedIn() continue de répondre
+    // "connecté" alors que chaque appel échouera.
+    logout();
+    throw new Error("Session Spotify expirée — reconnecte-toi.");
+  }
   const data = await r.json();
   if (!data.refresh_token) data.refresh_token = tok.refreshToken;
   storeToken(data);
@@ -153,6 +158,7 @@ export async function getSpotifyAccessToken() {
   const tok = readToken();
   if (!tok) return null;
   if (Date.now() < tok.expiresAt) return tok.accessToken;
+  if (!tok.refreshToken) { logout(); return null; }
   return await refreshAccessToken(tok);
 }
 
