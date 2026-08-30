@@ -15,7 +15,7 @@ import { db } from './firebase.js';
 import {
   escapeHtml, formatArtists, safeImageUrl, safeExternalUrl,
   requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
-  setClockOffset, serverNow, clockOffsetMs, clockIsCalibrated,
+  setClockOffset, serverNow, clockOffsetMs, clockIsCalibrated, avecDelaiMax,
 } from './utils.js';
 import { appConfig } from './config.js';
 
@@ -72,7 +72,12 @@ const state = {
 
 // === Init ===
 (async function init() {
-  const user = await ensureAnonAuth();
+  const user = await avecDelaiMax(ensureAnonAuth(), 8000);
+  if (!user) {
+    showState('join');
+    showJoinError("Connexion impossible. Vérifie ton réseau et recharge la page.");
+    return;
+  }
   state.uid = user.uid;
 
   // Recover session if any
@@ -93,8 +98,25 @@ const state = {
   state.name = nameFromSession;
   $('room-tag').textContent = state.roomId;
   $('me-name').textContent = state.name;
+  // Un écran TOUT DE SUITE. L'état réel arrivera au premier snapshot ; en
+  // attendant, le lobby vaut mieux qu'une page blanche — c'est exactement ce
+  // que voyait le joueur quand la base tardait à répondre.
+  showState('lobby');
+  surveillerPremierSnapshot();
   await attachListeners();
 })();
+
+// Si aucun snapshot n'arrive, le joueur reste devant un lobby qui ne mènera
+// nulle part. On le dit au lieu de le laisser attendre.
+const DELAI_PREMIER_SNAPSHOT_MS = 8000;
+let premierSnapshotRecu = false;
+
+function surveillerPremierSnapshot() {
+  setTimeout(() => {
+    if (premierSnapshotRecu) return;
+    banner("La partie ne répond pas. Vérifie ton réseau, puis recharge la page.", true);
+  }, DELAI_PREMIER_SNAPSHOT_MS);
+}
 
 function askForJoin(prefillCode) {
   showState('join');
@@ -125,6 +147,8 @@ function askForJoin(prefillCode) {
       localStorage.setItem('blindie.lastName', name);
       $('room-tag').textContent = code;
       $('me-name').textContent = name;
+      showState('lobby');
+      surveillerPremierSnapshot();
       await attachListeners();
     } catch (e) {
       console.error(e);
@@ -218,6 +242,7 @@ async function attachListeners() {
       window.location.href = './index.html';
       return;
     }
+    premierSnapshotRecu = true;
     noteRoomActivity();
     dernierSnapshotMs = Date.now();
     dernierStatut = room.status;
