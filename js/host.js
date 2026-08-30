@@ -44,6 +44,31 @@ function once(btn, handler) {
   });
 }
 
+// === Diagnostic (?debug=1) ===
+// Mesure les deux instants qui comptent au démarrage d'un round : quand le
+// clic a eu lieu, et quand Firestore a confirmé l'écriture. La différence
+// entre les deux, comparée au délai de propagation côté joueur, dit de quel
+// côté se situe une éventuelle lenteur.
+const DEBUG = new URLSearchParams(window.location.search).has('debug');
+const journal = [];
+
+function noteDebug(libelle, ms) {
+  if (!DEBUG) return;
+  journal.unshift(`${libelle} : ${(ms / 1000).toFixed(2)} s`);
+  journal.length = Math.min(journal.length, 6);
+  let el = document.getElementById('debug-panel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'debug-panel';
+    el.setAttribute('aria-hidden', 'true');
+    el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;' +
+      'background:rgba(10,1,24,.94);color:#8CBEDE;font:12px/1.6 ui-monospace,monospace;' +
+      'padding:.5rem .8rem;border-top:1px solid #35617F;white-space:pre;max-height:9rem;overflow:auto';
+    document.body.appendChild(el);
+  }
+  el.textContent = journal.join('\n');
+}
+
 // === Step routing ===
 const steps = ['login', 'import', 'lobby', 'playing', 'reveal', 'finished'];
 function showStep(name) {
@@ -85,6 +110,7 @@ const state = {
   // Instant local de démarrage du round, le temps que le serveur renvoie son
   // propre horodatage et qu'on puisse caler les deux horloges.
   roundAnchorMs: null,
+  roundClicMs: null,
   // Début du round dans le référentiel serveur. Estimé au lancement, puis
   // remplacé par la valeur exacte que renvoie le serveur.
   roundStartServerMs: null,
@@ -146,6 +172,8 @@ function watchRoom(roomId) {
       }
       // Valeur exacte : le décompte s'y recale au tick suivant.
       state.roundStartServerMs = serveur;
+      noteDebug(`round ${room.currentRoundIndex + 1} — snapshot revenu au host en`,
+                Date.now() - (state.roundClicMs || Date.now()));
     }
 
     // Un autre onglet a repris la main : lui seul fait autorité désormais.
@@ -514,6 +542,7 @@ function renderLobbyPlayers() {
 
 // === STEP 3 → 4 : start game ===
 once($('btn-start-game'), async () => {
+  state.roundClicMs = Date.now();
   // playRound() appelle déjà startRound(roomId, 0) en interne — pas besoin
   // d'un startGame() séparé qui écrirait un currentRoundStartedAt en double
   // (ce qui désynchronisait l'audio des joueurs sur le round 0).
@@ -642,10 +671,13 @@ async function playRound() {
   if (!track) return finishGame();
   state.currentTrack = track;
 
+  const avantEcriture = Date.now();
   await startRound(state.roomId, state.roundIndex);
+  noteDebug(`round ${state.roundIndex + 1} — écriture confirmée en`, Date.now() - avantEcriture);
   // Ancre du décompte, prise juste après la confirmation de startRound : c'est
   // ce qui colle au mieux au currentRoundStartedAt que les joueurs vont lire.
   state.roundAnchorMs = Date.now();
+  if (!state.roundClicMs) state.roundClicMs = Date.now();
   state.roundStartServerMs = serverNow();   // estimation, affinée au snapshot
   showStep('playing');
 
@@ -874,6 +906,7 @@ function renderRevealAnswers() {
 }
 
 once($('btn-next-round'), async () => {
+  state.roundClicMs = Date.now();
   state.roundIndex++;
   if (state.roundIndex >= state.tracks.length) return finishGame();
   // playRound() appelle déjà startRound(roomId, roundIndex) qui écrit
