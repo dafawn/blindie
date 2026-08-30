@@ -41,6 +41,18 @@ Web app privée de blind test entre potes (parties à distance via Discord). **S
 6. Pousse les règles Firestore versionnées (cf. §5) :
    - Soit via **Firebase Console → Firestore → Rules** : copier-coller le contenu de [`firestore.rules`](firestore.rules) puis **Publier**.
    - Soit via Firebase CLI : `firebase deploy --only firestore:rules`.
+7. **Active la purge automatique des rooms** — sinon chaque partie laisse
+   derrière elle son doc room, ses tracks et ses players, pour toujours :
+   **Firestore Database → Time-to-live → Create policy**
+   - Collection group : `rooms`
+   - Timestamp field : `expiresAt`
+
+   Le champ `expiresAt` est écrit à la création de la room (createdAt + 24 h,
+   cf. `ROOM_TTL_MS` dans [`js/room.js`](js/room.js)). Firestore supprime le
+   document dans les 24 h qui suivent l'échéance. Les sous-collections
+   (`tracks`, `players`, `answers`) ne sont PAS supprimées par le TTL : le
+   bouton « Annuler » du lobby appelle `deleteRoom()` qui, lui, fait le ménage
+   complet.
 
 > Les clés Firebase web sont **publiques** par nature — la sécurité repose entièrement sur les règles Firestore + Auth anonyme.
 
@@ -67,7 +79,7 @@ Web app privée de blind test entre potes (parties à distance via Discord). **S
 GitHub Pages ne supporte pas les repos privés en plan free → on utilise Netlify.
 
 1. https://app.netlify.com → **Add new project → Import an existing project → Deploy with GitHub**.
-2. Sélectionne le repo `Adviseo/blindie`.
+2. Sélectionne le repo `dafawn/blindie`.
 3. Build settings :
    - **Branch to deploy** : `main`
    - **Build command** : *(vide)*
@@ -77,6 +89,7 @@ GitHub Pages ne supporte pas les repos privés en plan free → on utilise Netli
 
 Le fichier [`netlify.toml`](netlify.toml) configure les **headers de sécurité** appliqués automatiquement :
 
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Referrer-Policy: strict-origin-when-cross-origin`
@@ -114,7 +127,9 @@ export const appConfig = {
   pointsTitle: 1,
   pointsArtist: 1,
   maxRoundsPerGame: 20,
-  previewMatchThreshold: 0.65,
+  maxNameLength: 16,
+  previewMatchThreshold: 0.65,   // seuil d'acceptation d'un match iTunes
+  matchThreshold: 0.75,          // seuil au-dessus duquel une réponse est juste
 };
 ```
 
@@ -182,18 +197,52 @@ npx serve -l 5500
 /player.html             Vue joueur (téléphone)
 /css/styles.css          Design néon sombre
 /firestore.rules         Règles Firestore versionnées (cf. §5)
+/firebase.json           Déclare firestore.rules pour `firebase deploy`
+/.firebaserc             Projet Firebase par défaut (blindie-app)
 /netlify.toml            Build config + headers sécurité
-/js/config.js            ⚠ À REMPLIR (Firebase, Spotify, app)
+/manifest.webmanifest    Manifest PWA (icônes, couleurs, display)
+/js/config.js            Config Firebase, Spotify, app (clés publiques)
 /js/firebase.js          Init Firebase + Auth anonyme
 /js/spotify.js           OAuth PKCE + state CSRF + lecture playlist
 /js/previews.js          iTunes Search API (+ stub Deezer)
 /js/room.js              Logique room/game sur Firestore
-/js/utils.js             Normalisation, fuzzy match, safeImageUrl, codes 6c
+/js/utils.js             Normalisation, scoring, mélange, safeImageUrl, codes 6c
 /js/host.js              Logique host (flow complet, scoring au reveal)
 /js/player.js            Logique joueur (téléphone)
+/tools/test-scoring.mjs  Banc de test du moteur de score
+/tools/test-rules.mjs    Tests des règles Firestore (émulateur)
+/tools/generate-icons.mjs  icon.svg → PNG + favicon.ico (nécessite sharp)
+/icon.svg /favicon.svg   Sources des icônes
+/favicon.ico /icon-192.png /icon-512.png /apple-touch-icon.png
+/og-image.jpg            Image de partage (1200×630)
+/silence.wav             Fichier muet servant à débloquer l'audio sur mobile
+/AUDIT.md                Rapport d'audit (août 2026) et suites données
 /README.md               Ce fichier
 /.gitignore
 ```
+
+### Lancer les tests
+
+Deux suites, sur les deux endroits où un bug est invisible pendant la partie.
+
+**Moteur de score** — 53 cas, aucune dépendance :
+
+```bash
+node tools/test-scoring.mjs
+```
+
+**Règles Firestore** — 30 cas contre l'émulateur. Vérifie le modèle anti-triche
+(un joueur ne peut pas s'écrire de points, ni répondre après le verrou, ni
+dépasser les bornes de taille) :
+
+```bash
+npm i --no-save @firebase/rules-unit-testing firebase
+npx firebase-tools emulators:exec --only firestore --project blindie-test \
+  "node tools/test-rules.mjs"
+```
+
+Les `PERMISSION_DENIED` affichés pendant la passe sont attendus : ce sont les
+refus que les tests provoquent volontairement. Seule la dernière ligne compte.
 
 ## 8. Modèle Firestore
 
@@ -202,13 +251,16 @@ rooms/{roomId}
   roomId, joinCode, hostId,
   status: "lobby" | "playing" | "locked" | "reveal" | "finished",
   currentRoundIndex, currentRoundStartedAt, revealedTrackId,
-  createdAt, totalRounds,
+  createdAt, expiresAt (purge TTL, cf. §1.7), totalRounds,
   settings: { roundDurationSeconds, pointsTitle, pointsArtist }
+  → le host lit la durée et le barème DANS settings, pas dans appConfig :
+    sinon son horloge et celle des joueurs divergent.
 
 rooms/{roomId}/tracks/{trackId}
-  order, spotifyId, title, artists[], album, imageUrl,
-  previewUrl, source: "itunes", playable,
-  normalizedTitle, normalizedArtists[]
+  order, title, artists[], imageUrl, previewUrl, trackViewUrl, playable
+  → uniquement les champs réellement relus. Les champs de diagnostic de la
+    recherche iTunes (confidence, matchedTrackName…) restent en mémoire côté
+    host et ne sont plus écrits.
 
 rooms/{roomId}/players/{playerId}   (playerId == uid Auth)
   name, joinedAt, lastSeen, score (écrit par le host uniquement)
@@ -249,17 +301,48 @@ Ce qui n'est PAS défendu (compromis assumés vu le contexte privé) :
 - **Previews iTunes manquantes** : certains morceaux n'ont pas d'aperçu Apple — ils sont marqués "pas de preview" et exclus du jeu.
 - **Autoplay audio mobile** : iOS/Android bloquent l'audio sans interaction. Un bouton "Activer le son" dans le lobby (et fallback en cas de late-join) débloque la session.
 - **CORS Deezer** : le fallback Deezer reste un stub (CORS bloque les appels directs). Brancher via un proxy serverless si besoin.
+- **Fautes de frappe sur un mot unique** : le scoring refuse « afrika » pour
+  *Africa*, parce qu'il ne peut pas le distinguer de « creepy » pour *Creep*.
+  Sur un titre d'un seul mot, une faute et une mauvaise réponse sont à la même
+  distance ; on préfère refuser les deux (un point volé fausse le classement,
+  un point refusé se conteste à voix haute). Cas figés dans
+  `tools/test-scoring.mjs`.
+- **Previews de déploiement Netlify** : l'URL d'une preview est aléatoire et ne
+  peut pas être déclarée dans le dashboard Spotify. La connexion Spotify y
+  échouera. Utilise `127.0.0.1:5500` en local ou le domaine de production.
 
 ---
 
 ## 11. Plan d'amélioration
 
-- [ ] Tests d'intégration Firestore via émulateur (`firebase emulators:start`)
+Fait (audit d'août 2026, cf. [`AUDIT.md`](AUDIT.md)) :
+
+- [x] Session host en `localStorage` — fermer l'onglet ne perd plus la partie
+- [x] Mélange de la playlist avant l'écrêtage — deux parties ne sont plus identiques
+- [x] Moteur de score repris, avec un banc de test (`tools/test-scoring.mjs`)
+- [x] Gestionnaires d'erreur sur tous les listeners Firestore
+- [x] Timer host ancré sur une date, plus de dérive en onglet inactif
+- [x] Suppression du heartbeat `lastSeen` (77 % des lectures Firestore, champ jamais lu)
+- [x] Purge automatique des rooms via TTL Firestore (cf. §1.7)
+- [x] Libellés de formulaire, contrastes WCAG AA, `prefers-reduced-motion`
+- [x] Manifest PWA (icônes `any` + `maskable` séparées)
+- [x] Le host écoute le doc room : divergence et second onglet détectés
+- [x] Wake Lock pendant les rounds, côté host et côté joueur
+- [x] Focus déplacé sur le titre à chaque changement d'écran
+- [x] Bornes de type et de taille dans les règles Firestore
+- [x] Tests des règles via l'émulateur (`tools/test-rules.mjs`)
+- [x] Le pseudo affiché vient du doc `players`, plus du champ libre de la réponse
+- [x] Un jeton Spotify mort déconnecte au lieu d'afficher « connecté »
+- [x] Liens Apple Music validés (https uniquement)
+- [x] Les previews de déploiement Netlify affichent un message explicite
+
+Reste à faire :
+
 - [ ] CSP avec nonces au lieu de `'unsafe-inline'`
+- [ ] Service worker (le manifest existe, mais l'app n'est pas installable hors ligne)
 - [ ] Bonus de rapidité au premier à trouver
 - [ ] Choix de la durée du round dans l'UI host
 - [ ] Reveal automatique X secondes après la fin du timer
-- [ ] PWA installable (manifest + service worker)
 - [ ] Deezer fallback via Cloudflare Worker
 - [ ] Animation de confettis sur bonne réponse
 - [ ] Sound effects host (countdown, reveal)

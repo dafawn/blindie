@@ -36,6 +36,7 @@ body {
     radial-gradient(circle at 50% 50%, rgba(0, 240, 255, 0.10), transparent 60%),
     linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
   min-height: 100vh;
+  min-height: 100dvh;   /* la barre d'URL de Safari iOS rogne 100vh */
   position: relative;
 }
 
@@ -89,6 +90,7 @@ body::before {
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  min-height: 100dvh;   /* la barre d'URL de Safari iOS rogne 100vh */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -133,6 +135,22 @@ h3 {
 p { color: var(--text-dim); line-height: 1.5; }
 
 /* === INPUTS === */
+/* Libellé visible. Un placeholder ne fait pas office de libellé : il n'est pas
+   annoncé comme tel, il disparaît à la première frappe, et il s'affiche en
+   contraste réduit. */
+.field-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin-bottom: 0.35rem;
+}
+.field { display: block; width: 100%; }
+
+/* Élément cliquable non-bouton rendu utilisable au clavier. */
+.copiable { cursor: copy; }
+
 input[type="text"], input[type="url"], textarea {
   width: 100%;
   background: rgba(10, 1, 24, 0.6);
@@ -152,7 +170,9 @@ input:focus, textarea:focus {
   background: rgba(10, 1, 24, 0.9);
 }
 
-input::placeholder { color: rgba(184, 168, 212, 0.5); }
+/* 4,9:1 — lisible tout en restant clairement secondaire par rapport
+   au libellé et à la valeur saisie. */
+input::placeholder { color: #8478a0; }
 
 .input-code {
   text-align: center;
@@ -187,7 +207,11 @@ input::placeholder { color: rgba(184, 168, 212, 0.5); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; filter: none; }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--neon-pink), var(--neon-violet));
+  /* Fonds assombris par rapport aux tons néon : du blanc sur #ff2e9a ne
+     donnait que 3,44:1, sous le minimum lisible de 4,5:1. Ici 5,1:1 et 6,2:1.
+     Les tons vifs restent utilisés pour le texte et les halos, où ils sont
+     posés sur du fond sombre et passent largement. */
+  background: linear-gradient(135deg, #d1177c, #8a2fd0);
   box-shadow: var(--shadow-pink);
 }
 
@@ -198,7 +222,10 @@ input::placeholder { color: rgba(184, 168, 212, 0.5); }
 }
 
 .btn-spotify {
+  /* Le vert Spotify est une couleur de marque : on garde le fond et on passe
+     le texte en encre sombre (7,4:1) plutôt que de dénaturer la teinte. */
   background: #1db954;
+  color: #04160b;
   box-shadow: 0 0 20px rgba(29, 185, 84, 0.4);
 }
 
@@ -210,50 +237,10 @@ input::placeholder { color: rgba(184, 168, 212, 0.5); }
 
 .btn-success { background: linear-gradient(135deg, var(--neon-green), #2bbf0d); color: #001a00; box-shadow: 0 0 18px rgba(57, 255, 20, 0.5); }
 .btn-warn { background: linear-gradient(135deg, var(--neon-yellow), #c9a700); color: #1a1500; box-shadow: 0 0 18px rgba(255, 214, 10, 0.5); }
-.btn-danger { background: linear-gradient(135deg, var(--danger), #b3001a); }
 
 .btn-sm { padding: 0.6rem 1rem; font-size: 0.95rem; width: auto; }
 .btn-row { display: flex; gap: 0.7rem; flex-wrap: wrap; }
 .btn-row .btn { flex: 1; min-width: 120px; }
-
-/* === BUZZER (player) === */
-.buzzer {
-  width: 100%;
-  aspect-ratio: 1;
-  max-width: 320px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, var(--neon-pink), #8a0050);
-  border: 6px solid rgba(255, 255, 255, 0.15);
-  box-shadow:
-    0 0 40px var(--neon-pink),
-    inset 0 -10px 30px rgba(0, 0, 0, 0.5),
-    inset 0 10px 20px rgba(255, 255, 255, 0.2);
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 3rem;
-  color: white;
-  letter-spacing: 0.1em;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto;
-  transition: transform 0.1s, box-shadow 0.2s;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
-  animation: buzzerPulse 2s ease-in-out infinite;
-}
-
-.buzzer:active { transform: scale(0.95); animation: none; }
-.buzzer.disabled {
-  background: radial-gradient(circle at 30% 30%, #555, #222);
-  box-shadow: none;
-  cursor: not-allowed;
-  animation: none;
-}
-
-@keyframes buzzerPulse {
-  0%, 100% { box-shadow: 0 0 40px var(--neon-pink), inset 0 -10px 30px rgba(0,0,0,0.5), inset 0 10px 20px rgba(255,255,255,0.2); }
-  50% { box-shadow: 0 0 70px var(--neon-pink), 0 0 100px rgba(255, 46, 154, 0.4), inset 0 -10px 30px rgba(0,0,0,0.5), inset 0 10px 20px rgba(255,255,255,0.2); }
-}
 
 /* === PLAYER LIST / SCOREBOARD === */
 .player-list {
@@ -275,13 +262,6 @@ input::placeholder { color: rgba(184, 168, 212, 0.5); }
 }
 
 .player-chip .name { font-weight: 600; }
-.player-chip .score {
-  font-family: 'Bebas Neue', monospace;
-  font-size: 1.4rem;
-  color: var(--neon-yellow);
-  text-shadow: 0 0 8px rgba(255, 214, 10, 0.5);
-}
-
 @keyframes chipPop {
   from { transform: scale(0.7); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
@@ -433,12 +413,18 @@ input::placeholder { color: rgba(184, 168, 212, 0.5); }
   margin: 1rem 0;
 }
 
-.timer.danger { color: var(--danger); text-shadow: 0 0 20px rgba(255, 51, 85, 0.7); animation: shake 0.3s linear infinite; }
+/* Battement lent plutôt qu'un tremblement à 0,3 s : l'urgence passe surtout
+   par le rouge, et la vibration tournait en boucle 5 secondes par round,
+   20 fois par partie. */
+.timer.danger {
+  color: var(--danger);
+  text-shadow: 0 0 20px rgba(255, 51, 85, 0.7);
+  animation: timerPulse 1s ease-in-out infinite;
+}
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-3px); }
-  75% { transform: translateX(3px); }
+@keyframes timerPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.06); opacity: 0.82; }
 }
 
 /* === ANSWERS REVIEW (host) === */
@@ -454,32 +440,59 @@ input::placeholder { color: rgba(184, 168, 212, 0.5); }
   border-left: 4px solid rgba(177, 74, 237, 0.4);
 }
 
+/* Bon / partiel / raté portent un symbole en plus de la couleur : une bordure
+   verte et une bordure rouge sont indiscernables pour un daltonien deutan, et
+   c'est l'information la plus importante de l'écran de révélation. */
 .answer-row.correct { border-left-color: var(--neon-green); background: rgba(57, 255, 20, 0.08); }
 .answer-row.partial { border-left-color: var(--neon-yellow); background: rgba(255, 214, 10, 0.08); }
 .answer-row.wrong { border-left-color: var(--danger); background: rgba(255, 51, 85, 0.08); }
+
+.answer-row.correct .who::before,
+.answer-row.partial .who::before,
+.answer-row.wrong   .who::before {
+  font-family: 'Bebas Neue', sans-serif;
+  margin-right: 0.4rem;
+}
+.answer-row.correct .who::before { content: '✔'; color: var(--neon-green); }
+.answer-row.partial .who::before { content: '≈'; color: var(--neon-yellow); }
+.answer-row.wrong   .who::before { content: '✘'; color: var(--danger); }
 
 .answer-row .who { font-weight: 700; color: var(--neon-cyan); }
 .answer-row .what { color: var(--text); font-size: 0.95rem; }
 .answer-row .what small { color: var(--text-dim); }
 
-.answer-actions { display: flex; gap: 0.4rem; }
-
 /* === UTILS === */
 .center { text-align: center; }
 .row { display: flex; gap: 1rem; align-items: center; }
 .col { display: flex; flex-direction: column; gap: 1rem; }
-.gap-sm { gap: 0.5rem; }
 .hidden { display: none !important; }
 .muted { color: var(--text-dim); font-size: 0.9rem; }
 .tag {
   display: inline-block;
-  background: rgba(177, 74, 237, 0.25);
-  color: var(--neon-violet);
+  background: rgba(177, 74, 237, 0.28);
+  color: #e2c6ff;   /* 8,8:1 — le violet néon plein ne donnait que 3,4:1 */
   padding: 0.2rem 0.7rem;
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.05em;
+}
+
+.player-banner {
+  width: 100%;
+  max-width: 480px;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  text-align: center;
+  background: rgba(177, 74, 237, 0.18);
+  border: 1px solid rgba(177, 74, 237, 0.5);
+  color: #e2c6ff;
+}
+.player-banner.error {
+  background: rgba(255, 51, 85, 0.15);
+  border-color: var(--danger);
+  color: #ffb3c0;
 }
 
 .error {
@@ -699,16 +712,48 @@ input::placeholder { color: rgba(184, 168, 212, 0.5); }
   width: 100%;
   text-align: center;
   padding: 1.5rem 1rem 1rem;
-  color: rgba(184, 168, 212, 0.45);
+  color: #8e82a8;   /* 5,4:1 */
   font-size: 0.72rem;
   line-height: 1.5;
   letter-spacing: 0.02em;
 }
 .legal-footer a {
-  color: rgba(184, 168, 212, 0.55);
-  text-decoration: none;
+  color: #a294bd;
+  /* Souligné : sans ça, le lien ne se distingue du texte que par sa couleur. */
+  text-decoration: underline;
+  text-underline-offset: 2px;
   transition: color 0.2s;
 }
 .legal-footer a:hover {
   color: var(--neon-cyan);
+}
+
+/* === Focus clavier === */
+/* Les inputs neutralisent l'outline du navigateur et signalent le focus par
+   leur bordure ; boutons et liens, eux, n'avaient rien de garanti. */
+.btn:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--neon-cyan);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* === Mouvement réduit === */
+/* Cinq animations tournaient en boucle sans fin (logo, pochette mystère,
+   timer, spinner). Le réglage système des personnes sensibles au mouvement
+   était purement ignoré. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Le spinner garde sa rotation : sans elle, plus rien n'indique l'attente.
+     Ralentie pour rester discrète. */
+  .spinner { animation: spin 2.4s linear infinite !important; }
 }

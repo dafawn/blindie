@@ -7,19 +7,39 @@
 import { ensureAnonAuth } from './firebase.js';
 import {
   joinRoom, leaveRoom, listenRoom, listenPlayers,
-  submitAnswer, roomExists, touchPlayer,
+  submitAnswer, roomExists, fetchTrackByOrder,
 } from './room.js';
-import { doc, getDoc, query, where, limit, getDocs, collection } from
+import { doc, getDoc } from
   "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { db } from './firebase.js';
-import { escapeHtml, formatArtists, safeImageUrl } from './utils.js';
+import {
+  escapeHtml, formatArtists, safeImageUrl, safeExternalUrl,
+  requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
+} from './utils.js';
 import { appConfig } from './config.js';
+
+const MAX_NAME = appConfig.maxNameLength;
 
 const $ = id => document.getElementById(id);
 
 const states = ['join', 'lobby', 'playing', 'reveal', 'finished'];
+let etatCourant = null;
+
 function showState(name) {
+  const change = name !== etatCourant;
   states.forEach(s => $(`state-${s}`).classList.toggle('hidden', s !== name));
+  etatCourant = name;
+  // Au changement d'écran, le focus restait où il était : un lecteur d'écran
+  // continuait d'annoncer l'ancien contenu, et la navigation au clavier
+  // repartait du mauvais endroit.
+  if (change) deplacerFocus($(`state-${name}`));
+}
+
+function deplacerFocus(section) {
+  const cible = section?.querySelector('h2, h3, [autofocus]');
+  if (!cible) return;
+  if (!cible.hasAttribute('tabindex')) cible.setAttribute('tabindex', '-1');
+  cible.focus({ preventScroll: false });
 }
 
 // === State ===
@@ -85,6 +105,10 @@ function askForJoin(prefillCode) {
     const name = $('join-name-in').value.trim();
     if (code.length !== 6) return showJoinError("Code à 6 caractères.");
     if (!name) return showJoinError("Pseudo manquant.");
+    if (name.length > MAX_NAME) return showJoinError(`Pseudo trop long (${MAX_NAME} max).`);
+    const btn = $('btn-join');
+    if (btn.disabled) return;
+    btn.disabled = true;
     try {
       const ok = await roomExists(code);
       if (!ok) return showJoinError("Aucune partie avec ce code.");
@@ -100,6 +124,8 @@ function askForJoin(prefillCode) {
     } catch (e) {
       console.error(e);
       showJoinError(e.message || "Erreur de connexion.");
+    } finally {
+      btn.disabled = false;
     }
   });
 }
@@ -110,8 +136,25 @@ function showJoinError(msg) {
   el.classList.remove('hidden');
 }
 
+// Message persistant en haut de l'écran, pour tout ce qui n'est pas lié au
+// formulaire de connexion (listener mort, hôte disparu).
+function banner(msg, isError) {
+  const el = $('player-banner');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle('error', !!isError);
+  el.classList.remove('hidden');
+}
+
 // === Listeners ===
+// Un seul appel par chargement de page — le garde évite qu'un double-clic sur
+// "Rejoindre" n'installe deux jeux de listeners.
+let listenersAttaches = false;
+
 function attachListeners() {
+  if (listenersAttaches) return;
+  listenersAttaches = true;
+
   listenRoom(state.roomId, async room => {
     if (!room) {
       alert("La partie a été fermée.");
@@ -119,17 +162,53 @@ function attachListeners() {
       window.location.href = './index.html';
       return;
     }
+    noteRoomActivity();
     await handleRoomUpdate(room);
-  });
+  }, showConnectionError);
+
   listenPlayers(state.roomId, players => {
     renderLobbyPlayers(players);
     renderScoreboard(players);
-  });
-  // Keep our lastSeen fresh
-  setInterval(() => touchPlayer(state.roomId, state.uid), 25_000);
+  }, showConnectionError);
 }
 
+// Un listener qui meurt laisse l'écran figé sur son dernier état, sans rien
+// dire. On le dit.
+function showConnectionError(err) {
+  const msg = err?.code === 'permission-denied'
+    ? "Tu n'es plus dans cette partie. Reviens à l'accueil pour la rejoindre."
+    : "Connexion perdue avec la partie. Vérifie ton réseau et recharge la page.";
+  banner(msg, true);
+}
+
+// === Détection d'un host qui a fermé son onglet ===
+// Si l'hôte disparaît en plein round, la room reste bloquée en "playing" pour
+// toujours : le timer des joueurs tombe à 0 mais rien ne verrouille jamais.
+// Sans ce garde-fou, l'écran reste vivant et ment.
+let dernierSignalRoom = Date.now();
+let veilleHost = null;
+
+function noteRoomActivity() {
+  dernierSignalRoom = Date.now();
+}
+
+function surveillerHost(room) {
+  clearTimeout(veilleHost);
+  if (room.status !== 'playing' && room.status !== 'locked') return;
+  const duree = (room.settings?.roundDurationSeconds
+                 || appConfig.defaultRoundDurationSeconds) * 1000;
+  const echeance = dernierSignalRoom + duree + HOST_GRACE_MS - Date.now();
+  veilleHost = setTimeout(() => {
+    banner("L'hôte semble déconnecté — la partie ne repart pas toute seule.", true);
+  }, Math.max(1000, echeance));
+}
+
+// Marge après la fin du timer avant de conclure que l'hôte a disparu. Large :
+// un hôte qui réfléchit avant de révéler ne doit pas déclencher l'alerte.
+const HOST_GRACE_MS = 60_000;
+
 async function handleRoomUpdate(room) {
+  surveillerHost(room);
   switch (room.status) {
     case 'lobby':
       stopTimer();
@@ -193,27 +272,20 @@ async function handleRoomUpdate(room) {
     case 'finished':
       stopTimer();
       stopLocalAudio();
+      releaseWakeLock();
       showState('finished');
       $('final-scoreboard').innerHTML = $('scoreboard').innerHTML;
       break;
   }
 }
 
-// Fetch the current track from Firestore by `order` field. Le previewUrl
-// est récupéré pour jouer l'audio en local (synchronisé avec le host).
-// Le title/artists/imageUrl sont aussi présents mais non affichés avant
-// le reveal — le scoring est fait côté host, le joueur n'en a pas besoin.
+// Le track du round courant. Le previewUrl est récupéré pour jouer l'audio en
+// local (synchronisé avec le host). Le title/artists/imageUrl sont aussi
+// présents mais non affichés avant le reveal — le scoring est fait côté host,
+// le joueur n'en a pas besoin.
 async function fetchCurrentTrackPublic(room) {
   if (room.currentRoundIndex == null) return null;
-  const q = query(
-    collection(db, 'rooms', state.roomId, 'tracks'),
-    where('order', '==', room.currentRoundIndex),
-    limit(1)
-  );
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  const d = snap.docs[0];
-  return { id: d.id, ...d.data() };
+  return fetchTrackByOrder(state.roomId, room.currentRoundIndex);
 }
 
 // === Lobby render ===
@@ -365,8 +437,9 @@ async function renderReveal(room) {
 
   // Apple Music link
   const appleLink = $('reveal-apple-link');
-  if (track.trackViewUrl) {
-    appleLink.href = track.trackViewUrl;
+  const appleUrl = safeExternalUrl(track.trackViewUrl);
+  if (appleUrl) {
+    appleLink.href = appleUrl;
     appleLink.classList.remove('hidden');
     appleLink.style.display = '';
   } else {
@@ -375,16 +448,14 @@ async function renderReveal(room) {
   }
 }
 
+// Le doc answer a pour identifiant l'uid du joueur (1 seul answer actif par
+// joueur, remplacé à chaque round) : une lecture directe suffit, pas besoin
+// d'une requête à deux filtres.
 async function findMyAnswerForRound(roundIndex) {
-  const q = query(
-    collection(db, 'rooms', state.roomId, 'answers'),
-    where('playerId', '==', state.uid),
-    where('roundIndex', '==', roundIndex),
-    limit(1)
-  );
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  return snap.docs[0].data();
+  const snap = await getDoc(doc(db, 'rooms', state.roomId, 'answers', state.uid));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return data.roundIndex === roundIndex ? data : null;
 }
 
 // === Leave ===
@@ -421,6 +492,9 @@ function unlockAudio() {
     state.localAudio.pause();
     state.localAudio.muted = false;
     state.audioUnlocked = true;
+    // Le son est débloqué : le joueur va écouter, l'écran ne doit pas s'éteindre.
+    requestWakeLock();
+    keepWakeLockOnVisibility();
     // Bouton lobby : transformation visuelle
     const btn = $('btn-unlock-audio');
     btn.textContent = '🔊 Son activé ✓';

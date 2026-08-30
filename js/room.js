@@ -6,8 +6,8 @@ import {
   collection, query, where, orderBy, limit, getDocs,
   onSnapshot, writeBatch, increment, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { db, ensureAnonAuth } from './firebase.js';
-import { generateJoinCode, scoreMatch, normalizeText } from './utils.js';
+import { db, ensureAnonAuth, Timestamp } from './firebase.js';
+import { generateJoinCode, calculateScore } from './utils.js';
 import { appConfig } from './config.js';
 
 // ===================================================================
@@ -28,6 +28,9 @@ const answerDoc = (roomId, playerId) => doc(db, 'rooms', roomId, 'answers', play
 // Room creation / lookup
 // ===================================================================
 
+// Durée de vie d'une room avant purge automatique par le TTL Firestore.
+const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+
 // Creates a new room owned by hostId. Picks a 6-char joinCode (cryptographic
 // random) that is also used as the document ID (collisions are retried).
 //
@@ -43,6 +46,11 @@ export async function createRoom(hostId) {
     const ref = roomDoc(code);
     const snap = await getDoc(ref);
     if (snap.exists()) continue;
+    const settings = {
+      roundDurationSeconds: appConfig.defaultRoundDurationSeconds,
+      pointsTitle: appConfig.pointsTitle,
+      pointsArtist: appConfig.pointsArtist,
+    };
     await setDoc(ref, {
       roomId: code,
       joinCode: code,
@@ -52,13 +60,15 @@ export async function createRoom(hostId) {
       currentRoundStartedAt: null,
       revealedTrackId: null,
       createdAt: serverTimestamp(),
-      settings: {
-        roundDurationSeconds: appConfig.defaultRoundDurationSeconds,
-        pointsTitle: appConfig.pointsTitle,
-        pointsArtist: appConfig.pointsArtist,
-      },
+      // Purge automatique : une politique TTL Firestore sur ce champ supprime
+      // la room 24 h après sa création (cf. README §5). Sans ça, chaque partie
+      // laisse derrière elle son doc room, ses tracks et ses players — pour
+      // toujours. Le champ est posé côté client : la valeur exacte importe
+      // peu, seule compte sa présence pour que le TTL s'applique.
+      expiresAt: Timestamp.fromMillis(Date.now() + ROOM_TTL_MS),
+      settings,
     });
-    return { roomId: code, joinCode: code };
+    return { roomId: code, joinCode: code, settings };
   }
   throw new Error("Impossible de générer un code unique, réessaie.");
 }
@@ -162,46 +172,40 @@ export async function leaveRoom(roomId, playerId) {
   }
 }
 
-// Met à jour le score cumulé d'un joueur. Tolérant au cas où le doc player
-// a été supprimé entre-temps (départ, kick, etc.) : on utilise setDoc+merge
-// avec increment(), ce qui (re)crée un doc minimal au pire. Comme ça,
-// scoreRound ne casse jamais entièrement à cause d'un joueur disparu.
-export async function updatePlayerScore(roomId, playerId, points) {
-  if (!points) return;
-  await setDoc(playerDoc(roomId, playerId), {
-    score: increment(points),
-  }, { merge: true }).catch(err => {
-    console.warn(`updatePlayerScore(${playerId}) failed`, err);
-  });
-}
-
-export async function touchPlayer(roomId, playerId) {
-  await updateDoc(playerDoc(roomId, playerId), { lastSeen: serverTimestamp() })
-    .catch(() => {});
-}
-
 // ===================================================================
 // Listeners
 // ===================================================================
 
-export function listenRoom(roomId, callback) {
-  return onSnapshot(roomDoc(roomId), snap => {
-    callback(snap.exists() ? snap.data() : null);
-  });
+// Les trois listeners prennent un `onError` OBLIGATOIRE en pratique : sans
+// lui, une erreur Firestore (permission-denied après un kick, room supprimée,
+// quota atteint) tue le listener en silence et l'écran reste figé sur le
+// dernier état reçu. C'est la panne la plus déroutante possible, parce que
+// l'app a l'air de fonctionner.
+function onSnapshotError(quoi, onError) {
+  return (err) => {
+    console.error(`Firestore listener "${quoi}" interrompu`, err);
+    if (onError) onError(err, quoi);
+  };
 }
 
-export function listenPlayers(roomId, callback) {
+export function listenRoom(roomId, callback, onError) {
+  return onSnapshot(roomDoc(roomId), snap => {
+    callback(snap.exists() ? snap.data() : null);
+  }, onSnapshotError('room', onError));
+}
+
+export function listenPlayers(roomId, callback, onError) {
   const q = query(playersCol(roomId), orderBy('joinedAt', 'asc'));
   return onSnapshot(q, snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  }, onSnapshotError('players', onError));
 }
 
-export function listenAnswers(roomId, roundIndex, callback) {
+export function listenAnswers(roomId, roundIndex, callback, onError) {
   const q = query(answersCol(roomId), where('roundIndex', '==', roundIndex));
   return onSnapshot(q, snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  }, onSnapshotError('answers', onError));
 }
 
 // Lecture ponctuelle (one-shot) des réponses d'un round. Utilisé par le host
@@ -247,30 +251,6 @@ export async function endGame(roomId) {
 // ===================================================================
 // Answers + scoring
 // ===================================================================
-
-// Fuzzy scoring d'une réponse contre un track. Fonction pure, sans I/O.
-// Utilisée côté host uniquement (scoreRound). Le joueur n'écrit JAMAIS de
-// score — c'est interdit par les règles Firestore.
-export function calculateScore(answer, track, settings) {
-  const pointsTitle = settings?.pointsTitle ?? appConfig.pointsTitle;
-  const pointsArtist = settings?.pointsArtist ?? appConfig.pointsArtist;
-  const threshold = 0.75;
-
-  let scoreTitle = 0;
-  if (answer.titleAnswer && scoreMatch(track.title, answer.titleAnswer) >= threshold) {
-    scoreTitle = pointsTitle;
-  }
-
-  let scoreArtist = 0;
-  if (answer.artistAnswer && (track.artists || []).length) {
-    // Take the best score across all artists (groups often have several).
-    const best = Math.max(
-      ...track.artists.map(a => scoreMatch(a, answer.artistAnswer))
-    );
-    if (best >= threshold) scoreArtist = pointsArtist;
-  }
-  return { scoreTitle, scoreArtist, totalScore: scoreTitle + scoreArtist };
-}
 
 // Submit a player's answer for the current round.
 // Le joueur n'écrit QUE sa réponse brute — pas de score. Le scoring est
@@ -360,3 +340,6 @@ export async function deleteRoom(roomId) {
 
 // Re-export for convenience
 export { ensureAnonAuth };
+// calculateScore vit dans utils.js (fonction pure, testable hors navigateur)
+// mais reste exposée ici : c'est l'API que le host connaît.
+export { calculateScore };

@@ -5,7 +5,7 @@
 // Why not Spotify preview_url ? Because it is increasingly null in many
 // regions/markets since 2024 and Spotify discourages relying on it.
 
-import { normalizeText, scoreMatch } from './utils.js';
+import { scoreMatch } from './utils.js';
 import { appConfig } from './config.js';
 
 // ===================================================================
@@ -133,24 +133,19 @@ export async function enrichTracksWithPreviews(spotifyTracks, onProgress) {
       const t = spotifyTracks[i];
       const primaryArtist = Array.isArray(t.artists) ? t.artists[0] : t.artists;
       const preview = await findPreview(t.name, primaryArtist);
+      // Ne sont conservés que les champs réellement consommés en aval.
+      // spotifyId, album, source, confidence, matchedTrackName,
+      // matchedArtistName, normalizedTitle et normalizedArtists étaient écrits
+      // dans chaque document Firestore sans qu'aucun code ne les relise —
+      // le scoring renormalise à la volée depuis `title`.
       const enriched = {
         order: i,
-        spotifyId: t.id,
         title: t.name,
         artists: Array.isArray(t.artists) ? t.artists : [t.artists].filter(Boolean),
-        album: t.album || null,
         imageUrl: t.image || null,
         previewUrl: preview?.previewUrl || null,
         trackViewUrl: preview?.trackViewUrl || null,
-        source: preview?.source || null,
-        matchedTrackName: preview?.matchedTrackName || null,
-        matchedArtistName: preview?.matchedArtistName || null,
-        confidence: preview?.confidence || 0,
         playable: !!preview?.previewUrl,
-        normalizedTitle: normalizeText(t.name),
-        normalizedArtists: (Array.isArray(t.artists) ? t.artists : [t.artists])
-          .filter(Boolean)
-          .map(normalizeText),
       };
       out[i] = enriched;
       done++;

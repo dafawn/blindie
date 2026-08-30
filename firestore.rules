@@ -16,6 +16,10 @@
 //     de SA room et écrire sa propre réponse / son propre player doc.
 //   - Joueur ne peut JAMAIS écrire un champ score* — c'est le host qui score.
 //
+// Le doc room porte un champ `expiresAt` (createdAt + 24 h) exploité par une
+// politique TTL Firestore — à créer dans la console, cf. README §1.7. Sans
+// elle, aucune room n'est jamais supprimée.
+//
 // Statuts de room : "lobby" | "playing" | "locked" | "reveal" | "finished"
 
 rules_version = '2';
@@ -96,6 +100,21 @@ service cloud.firestore {
         function playerCreateFields() {
           return request.resource.data.keys().hasOnly(['name', 'joinedAt', 'lastSeen']);
         }
+        // Le pseudo doit être une chaîne bornée. Sans ça, un participant peut
+        // écrire jusqu'à la limite du document (1 Mio) — l'UI de tous les autres
+        // le télécharge et l'affiche.
+        function nameValueOk() {
+          return request.resource.data.name is string
+              && request.resource.data.name.size() > 0
+              && request.resource.data.name.size() <= 40;
+        }
+        // En update, on ne contrôle le pseudo que s'il change. Un doc recréé en
+        // stub par le host (score seul, pas de name) doit rester modifiable —
+        // sinon leaveRoom, qui ne touche que lastSeen, se ferait refuser.
+        function nameOkOnUpdate() {
+          return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['name'])
+              || nameValueOk();
+        }
         // Sur update, seules name/lastSeen peuvent changer (diff sur les clés
         // affectées, donc `score` ajouté par le host n'est pas un blocker).
         function playerUpdateAffectedOk() {
@@ -125,10 +144,12 @@ service cloud.firestore {
         allow create: if (
                         isSelf()
                         && playerCreateFields()
+                        && nameValueOk()
                         && exists(/databases/$(database)/documents/rooms/$(roomId))
                       )
                       || isHostHere();
-        allow update: if (isSelf() && playerUpdateAffectedOk()) || isHostHere();
+        allow update: if (isSelf() && playerUpdateAffectedOk() && nameOkOnUpdate())
+                      || isHostHere();
         allow delete: if canSelfDelete() || isHostHere();
       }
 
@@ -168,6 +189,18 @@ service cloud.firestore {
             'titleAnswer', 'artistAnswer', 'submittedAt'
           ]);
         }
+        // Types et bornes. Sans ça, un participant peut écrire une réponse de
+        // près d'1 Mio, que le host télécharge et injecte dans son DOM à chaque
+        // snapshot. Le host n'affiche de toute façon jamais plus que ce que le
+        // joueur pouvait taper.
+        function answerShapeOk() {
+          let d = request.resource.data;
+          return d.roundIndex is int
+              && d.roundIndex >= 0
+              && d.playerName is string && d.playerName.size() <= 40
+              && d.titleAnswer is string && d.titleAnswer.size() <= 200
+              && d.artistAnswer is string && d.artistAnswer.size() <= 200;
+        }
 
         allow get:  if isRoomParticipant() || isHostHere();
         allow list: if isRoomParticipant() || isHostHere();
@@ -179,11 +212,13 @@ service cloud.firestore {
         allow create: if isRoomParticipant()
                       && isOwnAnswer()
                       && playerAnswerFields()
+                      && answerShapeOk()
                       && gameIsOpenForAnswers();
         allow update: if (
                         isRoomParticipant()
                         && isOwnAnswer()
                         && playerAnswerFields()
+                        && answerShapeOk()
                         && gameIsOpenForAnswers()
                       )
                       || isHostHere();

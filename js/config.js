@@ -32,9 +32,16 @@ export const appConfig = {
   pointsTitle: 1,
   pointsArtist: 1,
   maxRoundsPerGame: 20,
+  // Longueur maximale d'un pseudo. Appliquée aux DEUX portes d'entrée
+  // (index.html et player.html) — elles divergeaient.
+  maxNameLength: 16,
   // Seuil de confiance minimum pour accepter un match iTunes
   // (0..1). Au-dessus, on prend le previewUrl du résultat.
   previewMatchThreshold: 0.65,
+  // Seuil au-dessus duquel la réponse d'un joueur est comptée juste (0..1).
+  // Voir tools/test-scoring.mjs avant de le bouger : le jeu de tests est
+  // calibré sur cette valeur.
+  matchThreshold: 0.75,
 };
 
 // --- Adaptation automatique à l'adresse servie ---
@@ -54,4 +61,11 @@ if (typeof window !== 'undefined' && window.location.origin) {
   const origin = window.location.origin;
   spotifyConfig.redirectUri = `${origin}/host.html`;
   appConfig.baseUrl = origin;
+
+  // Une preview de déploiement Netlify a un hostname aléatoire
+  // (deploy-preview-42--monsite.netlify.app, branche--monsite.netlify.app).
+  // Impossible de la déclarer à l'avance dans le dashboard Spotify : la
+  // connexion y échouera forcément. On le signale plutôt que de laisser
+  // l'hôte face à un "INVALID_CLIENT" sans explication.
+  spotifyConfig.isDeployPreview = /--.*\.netlify\.app$/.test(window.location.hostname);
 }
