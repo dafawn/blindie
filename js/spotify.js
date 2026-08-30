@@ -220,17 +220,24 @@ export function parseSpotifyPlaylistUrl(input) {
   throw new Error("URL ou ID de playlist invalide.");
 }
 
-// Fetches all tracks of a playlist (auto-paginates).
+// Le document brut d'une playlist. Un seul appel réseau, réutilisé pour
+// l'aperçu (nom, pochette, propriétaire) ET pour la liste des morceaux :
+// les deux étaient demandés séparément, donc deux fois la même ressource et
+// deux fois le quota Spotify consommé.
+export async function fetchPlaylist(playlistId) {
+  return api(`/playlists/${playlistId}`);
+}
+
+// Tous les morceaux d'une playlist déjà récupérée (auto-pagination).
 // Returns an array of normalized track objects:
 //   { id, name, artists: string[], album, image, durationMs }
-export async function fetchSpotifyPlaylistTracks(playlistId) {
+export async function extractPlaylistTracks(playlist) {
   // Spotify a deux comportements pour /playlists/{id} :
   //   - Apps avec Extended Access : renvoie { tracks: { items: [...], next, ... } }
   //   - Apps en Development mode (nov. 2024) : renvoie { items: { items: [...], next, ... } }
   //     (la clé `tracks` est strippée, remplacée par `items` au niveau racine)
   // On gère les deux cas pour être robuste.
-  const playlist = await api(`/playlists/${playlistId}`);
-  const container = playlist.tracks || playlist.items;
+  const container = playlist?.tracks || playlist?.items;
   const all = [];
 
   // Spotify a aussi renommé `track` → `item` à l'intérieur de chaque entrée
@@ -246,7 +253,6 @@ export async function fetchSpotifyPlaylistTracks(playlistId) {
   };
 
   collect(container?.items);
-  console.log(`[BLINDIE] ${all.length}/${container?.total || '?'} morceaux récupérés`);
 
   // Pagination best-effort si la playlist a plus de 100 morceaux.
   let next = container?.next;
@@ -275,8 +281,8 @@ export function normalizeSpotifyTrack(t) {
   };
 }
 
-// Fetch playlist meta (name, owner, image) — used to display a confirmation
-// before enriching with iTunes previews.
-export async function fetchPlaylistMeta(playlistId) {
-  return api(`/playlists/${playlistId}`);
+// Nombre total de morceaux annoncé par Spotify, quelle que soit la forme de
+// la réponse (Extended Access ou Development mode).
+export function playlistTrackTotal(playlist) {
+  return playlist?.tracks?.total ?? playlist?.items?.total ?? null;
 }

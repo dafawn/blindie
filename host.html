@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>BLINDIE · Host</title>
   <meta name="description" content="Importe une playlist Spotify, lance un quiz musical et défie tes amis en direct !">
   <meta property="og:title" content="BLINDIE · Le blind test des playlists perso">
@@ -23,6 +23,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#14001f">
   <meta name="apple-mobile-web-app-title" content="Blindie">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -34,7 +35,7 @@
   <main class="screen">
     <div class="row" style="width:100%; max-width:720px; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);">
       <a href="./index.html" class="btn btn-ghost btn-sm" style="justify-self:start;">← Accueil</a>
-      <div class="logo" style="font-size: 2.2rem; line-height:1;">BLINDIE</div>
+      <h1 class="logo" style="font-size: 2.2rem; line-height:1; margin:0;">BLINDIE</h1>
       <span id="spotify-status" class="tag" style="justify-self:end;">⏺ Spotify</span>
     </div>
 
@@ -50,7 +51,11 @@
     <section id="step-import" class="card card-lg hidden">
       <h2>1. Importer la playlist</h2>
       <p>Colle l'URL d'une playlist Spotify (publique ou perso).</p>
-      <input id="playlist-url" type="url" placeholder="https://open.spotify.com/playlist/...">
+      <label class="field">
+        <span class="field-label">URL ou identifiant de la playlist</span>
+        <input id="playlist-url" type="url" placeholder="https://open.spotify.com/playlist/..."
+               autocomplete="off" spellcheck="false" aria-describedby="import-error">
+      </label>
       <button id="btn-load-playlist" class="btn btn-primary" style="margin-top:0.8rem;">
         ➜ Charger la playlist
       </button>
@@ -74,7 +79,7 @@
         🚀 Créer la room
       </button>
 
-      <div id="import-error" class="error hidden"></div>
+      <div id="import-error" class="error hidden" role="alert"></div>
     </section>
 
     <!-- STEP 3 — Lobby -->
@@ -82,11 +87,13 @@
       <h2>2. Salon d'attente</h2>
       <p>Code à taper <strong>ou</strong> QR à flasher :</p>
       <div class="join-share">
-        <div id="room-code" class="room-code">------</div>
+        <div id="room-code" class="room-code copiable" role="button" tabindex="0"
+             title="Cliquer pour copier le code">------</div>
         <div id="join-qr" class="join-qr" aria-label="QR code pour rejoindre la partie"></div>
       </div>
       <p class="muted center" style="margin-top:0.8rem;">
-        <code id="join-url" style="color: var(--neon-cyan); cursor: copy;"></code>
+        <code id="join-url" class="copiable" role="button" tabindex="0"
+           style="color: var(--neon-cyan);" title="Cliquer pour copier le lien"></code>
       </p>
       <div class="row" style="justify-content:center; margin-top:0.6rem; flex-wrap:wrap;">
         <button id="btn-copy-url" class="btn btn-secondary btn-sm">📋 Copier le lien</button>
@@ -112,12 +119,13 @@
         <div class="label">Round <span id="round-num">1</span> / <span id="round-total">10</span></div>
         <div class="album-art mystery" id="album-art"></div>
         <div class="timer" id="timer">30</div>
-        <audio id="audio" preload="auto"></audio>
         <div class="btn-row" style="justify-content:center; margin-top:1rem; max-width:520px; margin-inline:auto;">
           <button id="btn-replay" class="btn btn-ghost btn-sm">🔁 Rejouer</button>
           <button id="btn-stop-audio" class="btn btn-warn btn-sm">⏹ Stop & révéler</button>
         </div>
       </div>
+
+      <div id="round-error" class="error hidden" role="alert"></div>
 
       <h3>Réponses reçues <span id="answer-count" class="tag">0</span></h3>
       <div id="answers" style="margin-top:0.8rem;"></div>
@@ -147,7 +155,7 @@
 
     <!-- STEP 6 — Finished -->
     <section id="step-finished" class="card card-lg hidden">
-      <h1 class="center" style="font-family: 'Bebas Neue'; font-size: 3rem; color: var(--neon-yellow); text-shadow: 0 0 30px rgba(255,214,10,0.5);">🏆 PODIUM 🏆</h1>
+      <h2 class="center" style="font-family: 'Bebas Neue'; font-size: 3rem; color: var(--neon-yellow); text-shadow: 0 0 30px rgba(255,214,10,0.5);">🏆 PODIUM 🏆</h2>
       <div id="final-scoreboard" class="scoreboard" style="margin-top:1.5rem;"></div>
       <button id="btn-back-home-host" class="btn btn-primary" style="margin-top:1.5rem;">
         🏠 Retour à l'accueil

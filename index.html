@@ -23,6 +23,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#14001f">
   <meta name="apple-mobile-web-app-title" content="Blindie">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -49,14 +50,23 @@
           <hr style="flex:1; border:none; border-top:1px solid rgba(255,255,255,0.1);">
         </div>
 
-        <input id="join-code" type="text" class="input-code" maxlength="6"
-               placeholder="CODE" autocomplete="off" inputmode="text">
-        <input id="join-name" type="text" placeholder="Ton pseudo" maxlength="16" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Code de la partie</span>
+          <input id="join-code" type="text" class="input-code" maxlength="6"
+                 placeholder="CODE" autocomplete="off" inputmode="text"
+                 autocapitalize="characters" spellcheck="false"
+                 aria-describedby="error">
+        </label>
+        <label class="field">
+          <span class="field-label">Ton pseudo</span>
+          <input id="join-name" type="text" placeholder="Ex. Marion" maxlength="16"
+                 autocomplete="nickname" aria-describedby="error">
+        </label>
         <button id="btn-join" class="btn btn-secondary">
           📱 Rejoindre la partie
         </button>
 
-        <div id="error" class="error hidden"></div>
+        <div id="error" class="error hidden" role="alert"></div>
       </div>
     </div>
 
@@ -73,6 +83,7 @@
   <script type="module">
     import { ensureAnonAuth } from './js/firebase.js';
     import { roomExists, joinRoom } from './js/room.js';
+    import { appConfig } from './js/config.js';
 
     const codeInput = document.getElementById('join-code');
     const nameInput = document.getElementById('join-name');
@@ -97,14 +108,19 @@
       window.location.href = './host.html';
     });
 
-    document.getElementById('btn-join').addEventListener('click', async () => {
+    const joinBtn = document.getElementById('btn-join');
+    joinBtn.addEventListener('click', async () => {
+      if (joinBtn.disabled) return;
       clearError();
       const code = codeInput.value.trim().toUpperCase();
       const name = nameInput.value.trim();
       if (code.length !== 6) return showError("Code à 6 caractères.");
       if (!name) return showError("Choisis un pseudo.");
-      if (name.length > 16) return showError("Pseudo trop long (16 max).");
+      if (name.length > appConfig.maxNameLength) {
+        return showError(`Pseudo trop long (${appConfig.maxNameLength} max).`);
+      }
 
+      joinBtn.disabled = true;
       try {
         const user = await ensureAnonAuth();
         const exists = await roomExists(code);
@@ -117,6 +133,8 @@
       } catch (err) {
         console.error(err);
         showError(err.message || "Impossible de rejoindre.");
+      } finally {
+        joinBtn.disabled = false;
       }
     });
 

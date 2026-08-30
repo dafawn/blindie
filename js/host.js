@@ -12,7 +12,7 @@ import { ensureAnonAuth } from './firebase.js';
 import {
   loginWithSpotify, handleSpotifyCallback, isLoggedIn, logout,
   getCurrentSpotifyUser, parseSpotifyPlaylistUrl,
-  fetchSpotifyPlaylistTracks, fetchPlaylistMeta,
+  fetchPlaylist, extractPlaylistTracks, playlistTrackTotal,
 } from './spotify.js';
 import { enrichTracksWithPreviews } from './previews.js';
 import {
@@ -21,10 +21,24 @@ import {
   scoreRound, fetchAnswersForRound,
   listenPlayers, listenAnswers, deleteRoom,
 } from './room.js';
-import { escapeHtml, formatArtists, safeImageUrl } from './utils.js';
+import { escapeHtml, formatArtists, safeImageUrl, shuffled } from './utils.js';
 import { appConfig } from './config.js';
 
 const $ = id => document.getElementById(id);
+
+// Enveloppe un handler asynchrone pour qu'un deuxième clic pendant l'attente
+// ne fasse rien. Sans ça, deux clics rapides sur "Round suivant" incrémentent
+// state.roundIndex deux fois avant que le premier round n'ait démarré : le
+// morceau intermédiaire est purement sauté et le compteur ne correspond plus
+// à ce que les joueurs ont entendu.
+function once(btn, handler) {
+  btn.addEventListener('click', async (ev) => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { await handler(ev); }
+    finally { btn.disabled = false; }
+  });
+}
 
 // === Step routing ===
 const steps = ['login', 'import', 'lobby', 'playing', 'reveal', 'finished'];
@@ -50,6 +64,10 @@ const state = {
   unsubAnswers: null,
   players: [],
   answers: [],
+  // Réglages écrits dans le doc room à sa création. Le host les relit d'ici
+  // plutôt que de retomber sur appConfig : sinon, le jour où la durée devient
+  // réglable dans l'UI, l'horloge du host et celle des joueurs divergent.
+  settings: null,
   qrCode: null,          // instance qr-code-styling (sert à getRawData pour la copie PNG)
   joinUrl: '',           // URL d'invitation, utilisée par les boutons "Copier le lien"
 };
@@ -76,11 +94,37 @@ async function refreshSpotifyChip() {
   }
 }
 
+// Durée d'un round : celle inscrite dans la room, pas la valeur par défaut.
+function roundDuration() {
+  return state.settings?.roundDurationSeconds
+      ?? appConfig.defaultRoundDurationSeconds;
+}
+
+// Barème : idem — on lit la room, qui fait foi pour toute la partie.
+function roundPoints() {
+  return {
+    pointsTitle:  state.settings?.pointsTitle  ?? appConfig.pointsTitle,
+    pointsArtist: state.settings?.pointsArtist ?? appConfig.pointsArtist,
+  };
+}
+
 // === Session persistence ===
-// Permet au host de récupérer sa room sur refresh accidentel pendant une
-// partie. On stocke uniquement le roomId — l'identité Auth (state.hostId)
-// est restaurée via ensureAnonAuth (uid Firebase stable dans le navigateur).
+// Permet au host de récupérer sa room après un refresh OU une fermeture
+// d'onglet pendant une partie. On stocke uniquement le roomId — l'identité
+// Auth (state.hostId) est restaurée via ensureAnonAuth (uid Firebase stable
+// dans le navigateur).
+//
+// localStorage et pas sessionStorage : sessionStorage est effacé à la
+// fermeture de l'onglet. Un hôte qui ferme sa fenêtre par erreur perdait sa
+// room définitivement — le code n'est nulle part ailleurs, et les règles
+// Firestore interdisent de lister les rooms pour la retrouver. Pendant ce
+// temps les joueurs restaient bloqués en statut "playing", pour toujours.
 const HOST_SESSION_KEY = 'blindie.host.roomId';
+const hostSession = {
+  get:   () => localStorage.getItem(HOST_SESSION_KEY),
+  set:   (id) => localStorage.setItem(HOST_SESSION_KEY, id),
+  clear: () => localStorage.removeItem(HOST_SESSION_KEY),
+};
 
 // === Init ===
 (async function init() {
@@ -106,23 +150,24 @@ const HOST_SESSION_KEY = 'blindie.host.roomId';
 })();
 
 async function tryRehydrateHostSession() {
-  const savedRoomId = sessionStorage.getItem(HOST_SESSION_KEY);
+  const savedRoomId = hostSession.get();
   if (!savedRoomId) return false;
 
   let room;
   try { room = await getRoom(savedRoomId); }
-  catch { sessionStorage.removeItem(HOST_SESSION_KEY); return false; }
+  catch { hostSession.clear(); return false; }
 
   if (!room || room.hostId !== state.hostId) {
-    sessionStorage.removeItem(HOST_SESSION_KEY);
+    hostSession.clear();
     return false;
   }
 
   state.roomId = savedRoomId;
+  state.settings = room.settings || null;
   try { state.tracks = await fetchRoomTracks(savedRoomId); }
   catch (e) {
     console.warn('Rehydration: fetchRoomTracks failed', e);
-    sessionStorage.removeItem(HOST_SESSION_KEY);
+    hostSession.clear();
     return false;
   }
 
@@ -136,7 +181,7 @@ async function tryRehydrateHostSession() {
     renderLobbyPlayers();
     renderLiveScoreboard();
     if (state.step === 'finished') renderPodium();
-  });
+  }, onListenerError);
 
   switch (room.status) {
     case 'lobby':    showStep('lobby'); break;
@@ -184,7 +229,9 @@ async function resumeRound(room) {
     }
     $('btn-stop-audio').textContent = '⏹ Stop & révéler';
     $('btn-stop-audio').disabled = false;
-    startTimer(Math.round(remainingSec));
+    // startedAtMs peut être null si le timestamp serveur n'est pas encore
+    // résolu côté client — on retombe sur l'instant courant.
+    startTimer(startedAtMs ?? Date.now(), durationSec);
   } else {
     // status == 'locked' OU 'playing' mais timer écoulé pendant qu'on était
     // refresh (personne pour auto-lock). On lock pour rattraper l'état.
@@ -203,7 +250,7 @@ async function resumeRound(room) {
     state.answers = answers;
     if (state.step === 'reveal') renderRevealAnswers();
     else renderLiveAnswers();
-  });
+  }, onListenerError);
 }
 
 async function resumeReveal(room) {
@@ -216,7 +263,7 @@ async function resumeReveal(room) {
   state.unsubAnswers = listenAnswers(state.roomId, state.roundIndex, answers => {
     state.answers = answers;
     if (state.step === 'reveal') renderRevealAnswers();
-  });
+  }, onListenerError);
 
   state.answers = await fetchAnswersForRound(state.roomId, state.roundIndex);
   doReveal();
@@ -233,9 +280,9 @@ $('btn-load-playlist').addEventListener('click', async () => {
   try {
     const id = parseSpotifyPlaylistUrl(raw);
 
-    // Show meta first so the host knows we hit the right playlist.
-    let meta;
-    try { meta = await fetchPlaylistMeta(id); } catch {}
+    // Un seul appel réseau : le même document sert l'aperçu et la liste des
+    // morceaux.
+    const meta = await fetchPlaylist(id);
     if (meta) {
       $('playlist-meta-block').classList.remove('hidden');
       $('playlist-meta').innerHTML = `
@@ -245,16 +292,19 @@ $('btn-load-playlist').addEventListener('click', async () => {
         })()}
         <div class="meta-info">
           <strong>${escapeHtml(meta.name)}</strong><br>
-          <small>par ${escapeHtml(meta.owner?.display_name || '?')} · ${meta.tracks?.total ?? meta.items?.total ?? '?'} morceaux</small>
+          <small>par ${escapeHtml(meta.owner?.display_name || '?')} · ${playlistTrackTotal(meta) ?? '?'} morceaux</small>
         </div>
       `;
     }
 
-    const spotifyTracks = await fetchSpotifyPlaylistTracks(id);
+    const spotifyTracks = await extractPlaylistTracks(meta);
     if (spotifyTracks.length === 0) throw new Error("Playlist vide.");
 
+    // Mélange AVANT l'écrêtage. Sans ça, une playlist de 200 titres ne fait
+    // jamais jouer que ses 20 premiers, toujours dans le même ordre : la
+    // deuxième partie sur la même playlist est identique à la première.
     // Cap to maxRoundsPerGame * 2 (we'll drop the unmatched ones during enrich).
-    const candidates = spotifyTracks.slice(0, appConfig.maxRoundsPerGame * 2);
+    const candidates = shuffled(spotifyTracks).slice(0, appConfig.maxRoundsPerGame * 2);
 
     // Render placeholder rows
     $('enrich-block').classList.remove('hidden');
@@ -335,9 +385,10 @@ $('btn-load-playlist').addEventListener('click', async () => {
 $('btn-create-room').addEventListener('click', async () => {
   $('btn-create-room').disabled = true;
   try {
-    const { roomId } = await createRoom(state.hostId);
+    const { roomId, settings } = await createRoom(state.hostId);
     state.roomId = roomId;
-    sessionStorage.setItem(HOST_SESSION_KEY, roomId);
+    state.settings = settings;
+    hostSession.set(roomId);
     await addTracksToRoom(roomId, state.enriched);
     state.tracks = await fetchRoomTracks(roomId);
 
@@ -353,7 +404,7 @@ $('btn-create-room').addEventListener('click', async () => {
       renderLobbyPlayers();
       renderLiveScoreboard();
       if (state.step === 'finished') renderPodium();
-    });
+    }, onListenerError);
 
     showStep('lobby');
   } catch (e) {
@@ -381,7 +432,7 @@ function renderLobbyPlayers() {
 }
 
 // === STEP 3 → 4 : start game ===
-$('btn-start-game').addEventListener('click', async () => {
+once($('btn-start-game'), async () => {
   // playRound() appelle déjà startRound(roomId, 0) en interne — pas besoin
   // d'un startGame() séparé qui écrirait un currentRoundStartedAt en double
   // (ce qui désynchronisait l'audio des joueurs sur le round 0).
@@ -389,10 +440,10 @@ $('btn-start-game').addEventListener('click', async () => {
   await playRound();
 });
 
-$('btn-cancel-room').addEventListener('click', async () => {
+once($('btn-cancel-room'), async () => {
   if (!confirm("Annuler et supprimer la room ?")) return;
   if (state.unsubPlayers) state.unsubPlayers();
-  sessionStorage.removeItem(HOST_SESSION_KEY);
+  hostSession.clear();
   await deleteRoom(state.roomId);
   window.location.href = './index.html';
 });
@@ -508,6 +559,9 @@ async function playRound() {
   state.currentTrack = track;
 
   await startRound(state.roomId, state.roundIndex);
+  // Ancre du décompte, prise juste après la confirmation de startRound : c'est
+  // ce qui colle au mieux au currentRoundStartedAt que les joueurs vont lire.
+  const roundAnchorMs = Date.now();
   showStep('playing');
 
   $('round-num').textContent = state.roundIndex + 1;
@@ -517,6 +571,7 @@ async function playRound() {
   art.innerHTML = '';
   $('answers').innerHTML = '<p class="muted">En attente des buzz…</p>';
   $('answer-count').textContent = '0';
+  hideError('round-error');
   // Reset le bouton de fin de round à son libellé initial
   $('btn-stop-audio').textContent = '⏹ Stop & révéler';
   $('btn-stop-audio').disabled = false;
@@ -530,7 +585,7 @@ async function playRound() {
   try { await state.audio.play(); }
   catch (err) { console.warn('Audio autoplay refusé', err); }
 
-  startTimer(appConfig.defaultRoundDurationSeconds);
+  startTimer(roundAnchorMs, roundDuration());
 
   if (state.unsubAnswers) state.unsubAnswers();
   state.unsubAnswers = listenAnswers(state.roomId, state.roundIndex, answers => {
@@ -540,34 +595,58 @@ async function playRound() {
     // (par ex. score corrigé via une seconde passe).
     if (state.step === 'reveal') renderRevealAnswers();
     else renderLiveAnswers();
-  });
+  }, onListenerError);
 
   state.audio.onended = () => {
     // Don't auto-reveal — host clicks "Stop & révéler".
   };
 }
 
-function startTimer(seconds) {
+// Décompte ancré sur une DATE, pas sur un compteur décrémenté.
+//
+// Un setInterval qui fait `remaining--` dérive dès que l'onglet passe en
+// arrière-plan : les navigateurs bridant les timers inactifs (jusqu'à un tick
+// par minute), le host qui bascule sur Discord voyait son décompte ralentir
+// pendant que les joueurs, eux, calculaient depuis currentRoundStartedAt.
+// Les deux horloges divergeaient : les joueurs voyaient 0 et se faisaient
+// verrouiller plusieurs secondes plus tard, quand le host rattrapait.
+//
+// `startedAtMs` est l'ancre commune. Au démarrage d'un round c'est l'instant
+// local où startRound() a été confirmé ; à la reprise après refresh c'est le
+// currentRoundStartedAt du serveur, comme côté joueur.
+function startTimer(startedAtMs, durationSeconds) {
   clearInterval(state.timerInterval);
-  let remaining = seconds;
-  $('timer').textContent = remaining;
-  $('timer').classList.remove('danger');
-  state.timerInterval = setInterval(async () => {
-    remaining--;
-    $('timer').textContent = Math.max(0, remaining);
-    if (remaining <= 5) $('timer').classList.add('danger');
-    if (remaining <= 0) {
-      clearInterval(state.timerInterval);
-      if (state.audio) state.audio.pause();
-      // Verrouille automatiquement la room : les joueurs ne peuvent plus
-      // répondre. Le host clique ensuite sur "Révéler" pour scorer + reveal.
-      try {
-        await lockRound(state.roomId);
-      } catch (e) { console.warn('Lock failed', e); }
-      // Le bouton change de libellé pour refléter l'état "locked"
-      $('btn-stop-audio').textContent = '🎯 Révéler';
+  const finAt = startedAtMs + durationSeconds * 1000;
+  let verrouille = false;
+
+  const tick = async () => {
+    const remaining = Math.max(0, Math.ceil((finAt - Date.now()) / 1000));
+    $('timer').textContent = remaining;
+    $('timer').classList.toggle('danger', remaining <= 5);
+    if (remaining > 0 || verrouille) return;
+
+    verrouille = true;
+    clearInterval(state.timerInterval);
+    if (state.audio) state.audio.pause();
+    // Verrouille automatiquement la room : les joueurs ne peuvent plus
+    // répondre. Le host clique ensuite sur "Révéler" pour scorer + reveal.
+    try {
+      await lockRound(state.roomId);
+    } catch (e) {
+      console.error('Lock failed', e);
+      showError('round-error',
+        "Impossible de verrouiller le round — les joueurs peuvent encore répondre. " +
+        "Vérifie ta connexion, puis clique sur Révéler.");
     }
-  }, 1000);
+    // Le bouton change de libellé pour refléter l'état "locked"
+    $('btn-stop-audio').textContent = '🎯 Révéler';
+  };
+
+  // L'intervalle est armé AVANT le premier tick : si le round est déjà écoulé
+  // (reprise après refresh), tick() doit pouvoir annuler l'intervalle qu'il
+  // vient de créer, sinon celui-ci tourne indéfiniment dans le vide.
+  state.timerInterval = setInterval(tick, 500);
+  tick();
 }
 
 $('btn-replay').addEventListener('click', async () => {
@@ -608,7 +687,7 @@ $('btn-stop-audio').addEventListener('click', async () => {
       state.roundIndex,
       state.currentTrack,
       latestAnswers,
-      { pointsTitle: appConfig.pointsTitle, pointsArtist: appConfig.pointsArtist },
+      roundPoints(),
     );
     state.answers = scored;
     await revealRound(state.roomId, state.currentTrack.id);
@@ -695,7 +774,7 @@ function renderRevealAnswers() {
     }).join('');
 }
 
-$('btn-next-round').addEventListener('click', async () => {
+once($('btn-next-round'), async () => {
   state.roundIndex++;
   if (state.roundIndex >= state.tracks.length) return finishGame();
   // playRound() appelle déjà startRound(roomId, roundIndex) qui écrit
@@ -704,7 +783,7 @@ $('btn-next-round').addEventListener('click', async () => {
   await playRound();
 });
 
-$('btn-end-game').addEventListener('click', () => finishGame());
+once($('btn-end-game'), () => finishGame());
 
 // === STEP 6 : finished ===
 async function finishGame() {
@@ -742,6 +821,14 @@ function renderLiveScoreboard() {
 }
 
 // === Helpers ===
+// Un listener Firestore qui meurt laisse l'écran du host figé sur son dernier
+// état, sans rien dire — et les joueurs, eux, continuent d'attendre.
+function onListenerError(err, quoi) {
+  showError('round-error',
+    `Connexion perdue avec la partie (${quoi}). Recharge la page : ta room est ` +
+    `retrouvée automatiquement.`);
+}
+
 function showError(id, msg) {
   const el = $(id);
   el.textContent = msg;
@@ -750,16 +837,24 @@ function showError(id, msg) {
 function hideError(id) { $(id).classList.add('hidden'); }
 
 $('btn-back-home-host').addEventListener('click', () => {
-  sessionStorage.removeItem(HOST_SESSION_KEY);
+  hostSession.clear();
   window.location.href = './index.html';
 });
 
 // Click-to-copy on room code & join URL
-$('room-code').addEventListener('click', () => {
-  navigator.clipboard.writeText($('room-code').textContent).catch(() => {});
-  $('room-code').classList.add('success-flash');
-  setTimeout(() => $('room-code').classList.remove('success-flash'), 600);
-});
-$('join-url').addEventListener('click', () => {
-  navigator.clipboard.writeText($('join-url').textContent).catch(() => {});
-});
+// Copie au clic ET au clavier : ce sont des <div>/<code>, donc Entrée et
+// Espace ne déclenchent rien tout seuls.
+function copiableAuClic(id) {
+  const el = $(id);
+  const copier = () => {
+    navigator.clipboard.writeText(el.textContent).catch(() => {});
+    el.classList.add('success-flash');
+    setTimeout(() => el.classList.remove('success-flash'), 600);
+  };
+  el.addEventListener('click', copier);
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copier(); }
+  });
+}
+copiableAuClic('room-code');
+copiableAuClic('join-url');

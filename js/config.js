@@ -32,9 +32,16 @@ export const appConfig = {
   pointsTitle: 1,
   pointsArtist: 1,
   maxRoundsPerGame: 20,
+  // Longueur maximale d'un pseudo. Appliquée aux DEUX portes d'entrée
+  // (index.html et player.html) — elles divergeaient.
+  maxNameLength: 16,
   // Seuil de confiance minimum pour accepter un match iTunes
   // (0..1). Au-dessus, on prend le previewUrl du résultat.
   previewMatchThreshold: 0.65,
+  // Seuil au-dessus duquel la réponse d'un joueur est comptée juste (0..1).
+  // Voir tools/test-scoring.mjs avant de le bouger : le jeu de tests est
+  // calibré sur cette valeur.
+  matchThreshold: 0.75,
 };
 
 // --- Adaptation automatique à l'adresse servie ---

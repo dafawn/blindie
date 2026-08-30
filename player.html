@@ -23,6 +23,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#14001f">
   <meta name="apple-mobile-web-app-title" content="Blindie">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,17 +34,28 @@
 <body>
   <main class="screen">
     <div class="row" style="width:100%; max-width:480px; justify-content:space-between; align-items:center;">
-      <div class="logo" style="font-size: 1.8rem; line-height:1;">BLINDIE</div>
+      <h1 class="logo" style="font-size: 1.8rem; line-height:1; margin:0;">BLINDIE</h1>
       <span id="room-tag" class="tag">······</span>
     </div>
+
+    <div id="player-banner" class="player-banner hidden" role="status"></div>
 
     <!-- Join (when no session yet) -->
     <section id="state-join" class="card hidden">
       <h2>Rejoindre une partie</h2>
-      <input id="join-code-in" type="text" class="input-code" maxlength="6" placeholder="CODE" autocomplete="off">
-      <input id="join-name-in" type="text" placeholder="Ton pseudo" maxlength="16" autocomplete="off" style="margin-top:0.7rem;">
+      <label class="field">
+        <span class="field-label">Code de la partie</span>
+        <input id="join-code-in" type="text" class="input-code" maxlength="6" placeholder="CODE"
+               autocomplete="off" autocapitalize="characters" spellcheck="false"
+               aria-describedby="join-error">
+      </label>
+      <label class="field" style="margin-top:0.7rem;">
+        <span class="field-label">Ton pseudo</span>
+        <input id="join-name-in" type="text" placeholder="Ex. Marion" maxlength="16"
+               autocomplete="nickname" aria-describedby="join-error">
+      </label>
       <button id="btn-join" class="btn btn-primary" style="margin-top:0.7rem;">Rejoindre</button>
-      <div id="join-error" class="error hidden"></div>
+      <div id="join-error" class="error hidden" role="alert"></div>
     </section>
 
     <!-- Lobby -->
@@ -84,15 +96,23 @@
       </button>
 
       <div class="col" style="margin-top:0.8rem;">
-        <input id="answer-title" type="text" placeholder="Titre du morceau" autocomplete="off">
-        <input id="answer-artist" type="text" placeholder="Artiste(s)" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Titre du morceau</span>
+          <input id="answer-title" type="text" placeholder="Ex. Bohemian Rhapsody"
+                 autocomplete="off" maxlength="120" aria-describedby="submit-feedback">
+        </label>
+        <label class="field">
+          <span class="field-label">Artiste(s)</span>
+          <input id="answer-artist" type="text" placeholder="Ex. Queen"
+                 autocomplete="off" maxlength="120" aria-describedby="submit-feedback">
+        </label>
       </div>
 
       <button id="btn-submit" class="btn btn-primary" style="margin-top:1rem;">
         🚨 ENVOYER
       </button>
 
-      <div id="submit-feedback" class="submitted-feedback hidden" style="margin-top:0.8rem;">
+      <div id="submit-feedback" class="submitted-feedback hidden" role="status" style="margin-top:0.8rem;">
         ✓ Réponse envoyée — tu peux modifier jusqu'à la révélation
       </div>
     </section>
@@ -106,7 +126,7 @@
         <p id="reveal-artist" style="font-size:1.1rem; color:var(--neon-cyan); margin-top:0.3rem;">—</p>
       </div>
 
-      <div id="my-result" class="center" style="margin-top:0.5rem;">
+      <div id="my-result" class="center" role="status" style="margin-top:0.5rem;">
         <span class="tag" id="my-points">…</span>
       </div>
 
@@ -120,7 +140,7 @@
 
     <!-- Finished -->
     <section id="state-finished" class="card hidden">
-      <h1 class="center" style="font-family: 'Bebas Neue'; font-size: 2.5rem; color: var(--neon-yellow); text-shadow: 0 0 30px rgba(255,214,10,0.5);">🏆 FINI 🏆</h1>
+      <h2 class="center" style="font-family: 'Bebas Neue'; font-size: 2.5rem; color: var(--neon-yellow); text-shadow: 0 0 30px rgba(255,214,10,0.5);">🏆 FINI 🏆</h2>
       <div id="final-scoreboard" class="scoreboard" style="margin-top:1.5rem;"></div>
       <button id="btn-back-home-player" class="btn btn-primary" style="margin-top:1.5rem;">
         🏠 Retour à l'accueil
