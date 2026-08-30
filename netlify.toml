@@ -21,6 +21,50 @@
 # Si besoin de debug, basculer "Content-Security-Policy" → "Content-Security-Policy-Report-Only"
 # pour observer sans bloquer.
 
+# ---------------------------------------------------------------------------
+# Cache
+# ---------------------------------------------------------------------------
+# Les fichiers n'ont pas de hash dans leur nom : app.js reste app.js à chaque
+# déploiement. Sans directive explicite, un navigateur peut servir l'ancienne
+# version pendant qu'un autre a la nouvelle — deux joueurs avec deux codes
+# différents dans la même partie, et personne ne peut deviner qu'il faut vider
+# son cache.
+#
+# no-cache ne veut PAS dire "ne pas mettre en cache" : le fichier est gardé,
+# mais le navigateur revalide auprès du serveur avant de le servir. Si rien
+# n'a changé, la réponse est un 304 vide — c'est quasiment aussi rapide, et
+# ça garantit que tout le monde joue avec le même code.
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, no-cache, must-revalidate"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, no-cache, must-revalidate"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, no-cache, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, no-cache, must-revalidate"
+
+# Les images et le son muet ne changent jamais : eux peuvent être gardés.
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/*.wav"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
 [[headers]]
   for = "/*"
   [headers.values]

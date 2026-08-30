@@ -24,7 +24,7 @@ import {
 import {
   escapeHtml, formatArtists, safeImageUrl, safeExternalUrl, shuffled,
   requestWakeLock, releaseWakeLock, keepWakeLockOnVisibility,
-  setClockOffset, serverNow,
+  setClockOffset, serverNow, avecDelaiMax,
 } from './utils.js';
 import { appConfig, spotifyConfig } from './config.js';
 
@@ -227,14 +227,36 @@ const hostSession = {
 
 // === Init ===
 (async function init() {
+  // Règle absolue : cette fonction se termine TOUJOURS sur un écran affiché.
+  // Elle enchaînait des await sur Firebase sans borne ni filet — une lecture
+  // qui ne revenait pas laissait la page entièrement vide, sans un mot.
+  try {
+    await demarrer();
+  } catch (e) {
+    console.error('Démarrage impossible', e);
+    showStep('import');
+    showError('import-error',
+      "Connexion à la base impossible. Vérifie ta connexion et recharge la page.");
+  }
+})();
+
+async function demarrer() {
   try { await handleSpotifyCallback(); }
   catch (e) { showError('import-error', e.message); }
 
-  // Make sure we have a Firebase Auth uid (used as hostId).
-  const user = await ensureAnonAuth();
+  // Auth anonyme, bornée : sans uid on ne peut rien faire, mais mieux vaut
+  // le dire que rester sur un écran vide.
+  const user = await avecDelaiMax(ensureAnonAuth(), 8000);
+  if (!user) {
+    showStep('import');
+    showError('import-error',
+      "Connexion à Firebase impossible (réseau, bloqueur de contenu ou mode privé). " +
+      "Recharge la page pour réessayer.");
+    return;
+  }
   state.hostId = user.uid;
 
-  await refreshSpotifyChip();
+  await avecDelaiMax(refreshSpotifyChip(), 5000);
 
   // Si on a une room hôte sauvegardée et que le uid match, on saute
   // directement à l'étape correspondante au lieu de re-passer par l'import.
@@ -253,15 +275,23 @@ const hostSession = {
     return;
   }
   showStep('import');
-})();
+}
 
 async function tryRehydrateHostSession() {
   const savedRoomId = hostSession.get();
   if (!savedRoomId) return false;
 
-  let room;
-  try { room = await getRoom(savedRoomId); }
-  catch { hostSession.clear(); return false; }
+  // Borné : si la base ne répond pas, on repart sur l'import plutôt que de
+  // laisser la page vide. La room n'est pas perdue — elle sera retrouvée au
+  // prochain chargement.
+  const room = await avecDelaiMax(getRoom(savedRoomId), 5000);
+  if (room === null) {
+    showStep('import');
+    showError('import-error',
+      "La base n'a pas répondu — ta partie précédente n'a pas pu être retrouvée. " +
+      "Recharge la page pour réessayer.");
+    return true;
+  }
 
   if (!room || room.hostId !== state.hostId) {
     hostSession.clear();
@@ -270,11 +300,13 @@ async function tryRehydrateHostSession() {
 
   state.roomId = savedRoomId;
   state.settings = room.settings || null;
-  try { state.tracks = await fetchRoomTracks(savedRoomId); }
-  catch (e) {
-    console.warn('Rehydration: fetchRoomTracks failed', e);
-    hostSession.clear();
-    return false;
+  state.tracks = await avecDelaiMax(fetchRoomTracks(savedRoomId), 5000);
+  if (!state.tracks) {
+    console.warn('Reprise : lecture des morceaux impossible');
+    showStep('import');
+    showError('import-error',
+      "La base n'a pas répondu — impossible de reprendre ta partie. Recharge la page.");
+    return true;
   }
 
   $('room-code').textContent = savedRoomId;

@@ -266,6 +266,17 @@ export function safeExternalUrl(url) {
   return safeImageUrl(url);
 }
 
+// === Garde-fou de temps ===
+// Une promesse qui ne revient jamais (Firestore injoignable, réseau qui pend)
+// ne doit pas laisser l'utilisateur devant un écran vide. On borne l'attente
+// et on continue avec une valeur de repli.
+export function avecDelaiMax(promesse, ms, replie = null) {
+  return Promise.race([
+    promesse.catch(() => replie),
+    new Promise(r => setTimeout(() => r(replie), ms)),
+  ]);
+}
+
 // === Horloge serveur ===
 // Le déroulement d'un round est piloté par un horodatage SERVEUR
 // (currentRoundStartedAt). Le comparer à Date.now() revient à faire confiance
