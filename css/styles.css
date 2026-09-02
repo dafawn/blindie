@@ -21,7 +21,6 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  height: 100%;
   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
   background: var(--bg-0);
   color: var(--text);
@@ -38,6 +37,12 @@ body {
   min-height: 100vh;
   min-height: 100dvh;   /* la barre d'URL de Safari iOS rogne 100vh */
   position: relative;
+  /* Colonne : l'écran prend la hauteur restante, le pied de page suit. La page
+     défile normalement — avant, html et body étaient figés à 100 % et c'est le
+     body qui défilait en interne, ce qui rendait le défilement peu fiable sur
+     iOS et neutralisait tout retour en haut. */
+  display: flex;
+  flex-direction: column;
 }
 
 body::before {
@@ -89,8 +94,7 @@ body::before {
 .screen {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
-  min-height: 100dvh;   /* la barre d'URL de Safari iOS rogne 100vh */
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -112,6 +116,109 @@ body::before {
 
 .card-lg { max-width: 720px; }
 .card-xl { max-width: 1100px; }
+
+/* Pages applicatives (hôte, joueur) : le contenu part du haut, sous une barre
+   fixe. Centré verticalement, le header sautait d'un écran à l'autre. */
+.screen-app { justify-content: flex-start; }
+
+/* === BARRE DU HAUT === */
+.topbar {
+  width: 100%;
+  /* Plus large que la carte (720 px) : à droite, « Nouvelle partie » et la
+     pastille Spotify doivent tenir sur une ligne. */
+  max-width: 960px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+}
+.topbar-player { max-width: 480px; grid-template-columns: auto 1fr; }
+.topbar-player .tag { justify-self: end; }
+.topbar .logo { font-size: 2.2rem; line-height: 1; margin: 0; }
+.topbar .left  { justify-self: start; display: flex; gap: 0.5rem; align-items: center; }
+.topbar .right { justify-self: end; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+/* Tout ce qui vit dans la barre a la même hauteur */
+.topbar .btn-sm,
+.topbar .tag,
+.topbar .status-chip {
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.9rem;
+  font-size: 0.9rem;
+}
+.topbar .tag { font-size: 0.85rem; }
+
+/* Pastille d'état : un point gris ou vert, et le libellé qui dit l'état */
+.status-chip {
+  gap: 0.45rem;
+  background: rgba(177, 74, 237, 0.28);
+  color: #e2c6ff;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.status-chip::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #8e82a8;
+  flex: none;
+}
+.status-chip.on { cursor: pointer; }
+.status-chip.on::before { background: var(--neon-green); box-shadow: 0 0 8px rgba(57, 255, 20, 0.8); }
+
+/* === FIL DES ÉTAPES (hôte) === */
+.steps {
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
+  max-width: 720px;
+  margin: -0.8rem auto 0;
+  padding: 0;
+  font-family: 'Bebas Neue', 'Impact', sans-serif;
+  letter-spacing: 0.1em;
+  font-size: 1rem;
+  color: var(--text-dim);
+}
+.steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.9rem 0.3rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(177, 74, 237, 0.3);
+}
+.steps li .n {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: rgba(177, 74, 237, 0.28);
+  font-size: 0.85rem;
+  letter-spacing: 0;
+}
+.steps li.is-current { color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.5); }
+.steps li.is-current .n { background: var(--neon-cyan); color: #001a1f; }
+.steps li.is-done .n { background: rgba(57, 255, 20, 0.22); color: var(--neon-green); }
+
+/* === ICÔNES === */
+.ico {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 h1, h2, h3 {
   font-family: 'Bebas Neue', 'Impact', sans-serif;
@@ -147,6 +254,8 @@ p { color: var(--text-dim); line-height: 1.5; }
   margin-bottom: 0.35rem;
 }
 .field { display: block; width: 100%; }
+/* Un champ qui suit un paragraphe respire */
+.card p + .field { margin-top: 0.9rem; }
 
 /* Élément cliquable non-bouton rendu utilisable au clavier. */
 .copiable { cursor: copy; }
@@ -240,7 +349,19 @@ input::placeholder { color: #8478a0; }
 
 .btn-sm { padding: 0.6rem 1rem; font-size: 0.95rem; width: auto; }
 .btn-row { display: flex; gap: 0.7rem; flex-wrap: wrap; }
-.btn-row .btn { flex: 1; min-width: 120px; }
+.btn-row .btn { flex: 1 1 auto; min-width: 120px; max-width: 26rem; }
+/* Le bouton fantôme (Annuler, Fin de partie) garde sa largeur naturelle :
+   étiré comme l'action principale, il lui volait la vedette. */
+.btn-row .btn-ghost { flex: 0 0 auto; width: auto; }
+
+/* Pleine largeur est un réflexe mobile. Dans une carte large sur grand écran,
+   un bouton d'un mètre écrase la hiérarchie : on le borne. */
+@media (min-width: 700px) {
+  .card-lg .btn:not(.btn-sm),
+  .card-xl .btn:not(.btn-sm) { width: auto; min-width: 16rem; max-width: 26rem; }
+  .card-lg .btn-center,
+  .card-xl .btn-center { display: flex; margin-inline: auto; }
+}
 
 /* === PLAYER LIST / SCOREBOARD === */
 .player-list {
@@ -520,6 +641,10 @@ input::placeholder { color: #8478a0; }
   .card { padding: 1.3rem; border-radius: 16px; }
   .album-art { width: 160px; height: 160px; }
   .logo { font-size: 4rem; }
+  .topbar { gap: 0.5rem; }
+  .topbar .logo { font-size: 1.8rem; }
+  .topbar .btn-sm, .topbar .tag, .topbar .status-chip { padding: 0 0.7rem; font-size: 0.82rem; }
+  .steps { margin-top: -0.3rem; font-size: 0.9rem; }
 }
 
 /* Loader */
@@ -699,8 +824,11 @@ input::placeholder { color: #8478a0; }
   padding: 0.55rem 1.2rem;
   border-radius: 10px;
   border: none;
-  background: linear-gradient(135deg, #fc3c44, #d4294f);
-  color: #fff;
+  /* Lien secondaire, pas un bouton d'action : le rouge Apple était le seul
+     rouge de la palette et attirait l'œil plus que le score. */
+  background: transparent;
+  border: 1px solid rgba(184, 168, 212, 0.35);
+  color: var(--text-dim);
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 0.85rem;
   font-weight: 600;
@@ -708,11 +836,10 @@ input::placeholder { color: #8478a0; }
   text-decoration: none;
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
-  box-shadow: 0 0 14px rgba(252, 60, 68, 0.4);
   margin-top: 0.8rem;
   width: auto;
 }
-.btn-apple-music:hover { transform: translateY(-2px); filter: brightness(1.15); }
+.btn-apple-music:hover { color: var(--text); border-color: rgba(184, 168, 212, 0.7); }
 .btn-apple-music:active { transform: translateY(1px); }
 
 /* === Legal footer === */

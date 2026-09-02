@@ -32,11 +32,33 @@
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <main class="screen">
-    <div class="row" style="width:100%; max-width:480px; justify-content:space-between; align-items:center;">
-      <h1 class="logo" style="font-size: 1.8rem; line-height:1; margin:0;">BLINDIE</h1>
+  <!-- Icônes monochromes : elles héritent de la couleur du texte et se dessinent
+       pareil sur tous les appareils, là où les emojis changent d'un système à
+       l'autre et jurent avec la palette néon. -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 4.5v15a1 1 0 0 0 1.5.87l13-7.5a1 1 0 0 0 0-1.74l-13-7.5A1 1 0 0 0 7 4.5z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect fill="currentColor" stroke="none" x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-replay" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v4M17 21h4"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></symbol>
+    <symbol id="i-login" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></symbol>
+    <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9.9 9.9 0 0 1 0 14"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  </svg>
+  <main class="screen screen-app">
+    <header class="topbar topbar-player">
+      <h1 class="logo">BLINDIE</h1>
       <span id="room-tag" class="tag">······</span>
-    </div>
+    </header>
 
     <div id="player-banner" class="player-banner hidden" role="status"></div>
 
@@ -54,7 +76,7 @@
         <input id="join-name-in" type="text" placeholder="Ex. Marion" maxlength="16"
                autocomplete="nickname" aria-describedby="join-error">
       </label>
-      <button id="btn-join" class="btn btn-primary" style="margin-top:0.7rem;">Rejoindre</button>
+      <button id="btn-join" class="btn btn-primary" style="margin-top:0.7rem;"><svg class="ico" aria-hidden="true"><use href="#i-login"/></svg> Rejoindre</button>
       <div id="join-error" class="error hidden" role="alert"></div>
     </section>
 
@@ -63,11 +85,11 @@
       <div class="center">
         <div class="spinner"></div>
         <h2 style="margin-top:0.5rem;">Salut <span id="me-name" style="color: var(--neon-pink)">—</span> 👋</h2>
-        <p style="margin-top:0.5rem;">En attente du host pour démarrer…</p>
+        <p style="margin-top:0.5rem;">En attente de l'hôte pour démarrer…</p>
       </div>
 
       <button id="btn-unlock-audio" class="btn btn-primary" style="margin-top:1.5rem;">
-        🔊 Activer le son
+        <svg class="ico" aria-hidden="true"><use href="#i-volume"/></svg> Activer le son
       </button>
       <p id="audio-status" class="muted center" style="margin-top:0.5rem;">
         Clique pour débloquer le son (obligatoire sur mobile).
@@ -85,14 +107,14 @@
         <div class="label" style="font-family:'Bebas Neue'; letter-spacing:0.3em; color: var(--neon-pink);">
           ROUND <span id="play-round">1</span> / <span id="play-round-total">?</span>
         </div>
-        <h2 style="margin-top:0.5rem;">🎧 Quel est ce morceau ?</h2>
+        <h2 style="margin-top:0.5rem;">Quel est ce morceau ?</h2>
         <div class="timer" id="play-timer" style="font-size:2.5rem; margin-top:0.5rem;">30</div>
       </div>
 
       <audio id="local-audio" preload="auto" style="display:none;"></audio>
 
       <button id="btn-unlock-audio-late" class="btn btn-warn hidden" style="margin-top:0.8rem;">
-        🔊 Activer le son
+        <svg class="ico" aria-hidden="true"><use href="#i-volume"/></svg> Activer le son
       </button>
 
       <div class="col" style="margin-top:0.8rem;">
@@ -114,7 +136,7 @@
       </p>
 
       <button id="btn-submit" class="btn btn-primary" style="margin-top:1rem;">
-        🚨 ENVOYER
+        <svg class="ico" aria-hidden="true"><use href="#i-send"/></svg> Envoyer
       </button>
 
       <div id="submit-feedback" class="submitted-feedback hidden" role="status" style="margin-top:0.8rem;">
@@ -136,7 +158,7 @@
       </div>
 
       <a id="reveal-apple-link" class="btn-apple-music hidden" href="#" target="_blank" rel="noopener" style="margin: 0.8rem auto 0; display:none;">
-        🎵 Écouter sur Apple Music
+        <svg class="ico" aria-hidden="true"><use href="#i-music"/></svg> Écouter sur Apple Music
       </a>
 
       <h3 style="margin-top:1.5rem;">Classement</h3>
@@ -148,7 +170,7 @@
       <h2 class="center" style="font-family: 'Bebas Neue'; font-size: 2.5rem; color: var(--neon-yellow); text-shadow: 0 0 30px rgba(255,214,10,0.5);">🏆 FINI 🏆</h2>
       <div id="final-scoreboard" class="scoreboard" style="margin-top:1.5rem;"></div>
       <button id="btn-back-home-player" class="btn btn-primary" style="margin-top:1.5rem;">
-        🏠 Retour à l'accueil
+        <svg class="ico" aria-hidden="true"><use href="#i-home"/></svg> Retour à l'accueil
       </button>
     </section>
   </main>
