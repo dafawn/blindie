@@ -226,7 +226,7 @@ npx serve -l 5500
 
 Trois suites, sur les endroits où un bug est invisible pendant la partie.
 
-**Moteur de score** — 53 cas, aucune dépendance :
+**Moteur de score** — 93 cas, aucune dépendance :
 
 ```bash
 node tools/test-scoring.mjs
@@ -319,12 +319,14 @@ Ce qui n'est PAS défendu (compromis assumés vu le contexte privé) :
   figés dans `tools/test-previews.mjs`.
 - **Autoplay audio mobile** : iOS/Android bloquent l'audio sans interaction. Un bouton "Activer le son" dans le lobby (et fallback en cas de late-join) débloque la session.
 - **CORS Deezer** : le fallback Deezer reste un stub (CORS bloque les appels directs). Brancher via un proxy serverless si besoin.
-- **Fautes de frappe sur un mot unique** : le scoring refuse « afrika » pour
-  *Africa*, parce qu'il ne peut pas le distinguer de « creepy » pour *Creep*.
-  Sur un titre d'un seul mot, une faute et une mauvaise réponse sont à la même
-  distance ; on préfère refuser les deux (un point volé fausse le classement,
-  un point refusé se conteste à voix haute). Cas figés dans
-  `tools/test-scoring.mjs`.
+- **Orthographe et noms d'artistes** : une faute qui ne change pas la
+  prononciation est acceptée (« afrika » pour *Africa*, « ema » pour *Emma*) ;
+  tout ce qui change le son est refusé (« creepy » pour *Creep*). Pour
+  l'artiste, un mot entier du nom suffit (« Franck » pour *Franck Lénar*,
+  « Stones » pour *The Rolling Stones*), à condition que tous les mots tapés
+  appartiennent au nom ; les titres n'ont pas cette tolérance. Limite connue :
+  « Mickael » pour *Michael* est refusé (« ch » dur imprévisible). Cas figés
+  dans `tools/test-scoring.mjs`.
 - **Previews de déploiement Netlify** : l'URL d'une preview est aléatoire et ne
   peut pas être déclarée dans le dashboard Spotify. La connexion Spotify y
   échouera. Utilise `127.0.0.1:5500` en local ou le domaine de production.

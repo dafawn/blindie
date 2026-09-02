@@ -109,6 +109,8 @@ export function scoreMatch(expected, candidate) {
 function pairScore(a, b) {
   if (!a || !b) return 0;
   if (a === b) return 1;
+  // Même prononciation, autre orthographe : « Bohemian Rapsody »
+  if (phonetic(a) === phonetic(b)) return 0.95;
   if (isNearSubstring(a, b)) return 0.9;
 
   const ta = tokens(a);
@@ -125,9 +127,10 @@ function pairScore(a, b) {
 // Quand les DEUX côtés font au moins deux mots, un mot compte comme trouvé
 // s'il est proche d'un mot de l'autre côté, pas seulement s'il est identique :
 // "Bohemian Rhapsodie" retrouve ainsi "Bohemian Rhapsody".
-// Quand l'un des côtés n'a qu'un seul mot, on exige l'égalité stricte. Sinon
-// "california" vaudrait "Californication" et "creepy" vaudrait "Creep" : sur un
-// mot unique, une faute de frappe et une mauvaise réponse sont indiscernables.
+// Quand l'un des côtés n'a qu'un seul mot, on exige l'égalité stricte ou
+// phonétique. Sinon "california" vaudrait "Californication" et "creepy"
+// vaudrait "Creep" : sur un mot unique, une faute de frappe et une mauvaise
+// réponse ne se distinguent que par le son.
 const TOKEN_NEAR = 0.8;
 
 function tokenOverlap(ta, tb) {
@@ -136,7 +139,9 @@ function tokenOverlap(ta, tb) {
   const libres = [...tb];
   let inter = 0;
   for (const t of ta) {
-    const i = libres.findIndex(u => u === t || (flou && bigramDice(t, u) >= TOKEN_NEAR));
+    const i = libres.findIndex(u => u === t
+      || phoneticToken(u) === phoneticToken(t)
+      || (flou && bigramDice(t, u) >= TOKEN_NEAR));
     if (i !== -1) { inter++; libres.splice(i, 1); }
   }
   const union = ta.length + tb.length - inter;
@@ -172,6 +177,90 @@ function bigrams(str) {
   return s;
 }
 
+// === Phonétique ===
+// Clé phonétique prudente, orientée français mais valable pour l'anglais
+// courant. Deux mots qui se prononcent pareil ont la même clé ; deux mots qui
+// sonnent différemment gardent des clés différentes. C'est la frontière que le
+// jeu applique : une faute d'orthographe qui ne change pas le son est acceptée
+// (« Ema » pour Emma, « Afrika » pour Africa, « Barby » pour Barbie), tout ce
+// qui change le son est refusé (« creepy » pour Creep, « Emmy » pour Emma).
+export function phonetic(str) {
+  return tokens(plain(str)).map(phoneticToken).join(' ');
+}
+
+export function phoneticToken(t) {
+  let s = String(t ?? '').toLowerCase();
+  if (!s) return '';
+  s = s
+    .replace(/ph/g, 'f')
+    .replace(/th/g, 't')
+    .replace(/chr/g, 'kr')             // Chris, Christophe : « ch » dur
+    .replace(/[cs]h/g, 'X')            // son « ch » (X : jamais produit par plain)
+    .replace(/ck|qu|q/g, 'k')
+    .replace(/c(?=[eiy])/g, 's')
+    .replace(/c/g, 'k')
+    .replace(/g(?=[eiy])/g, 'j')
+    .replace(/h/g, '')
+    .replace(/y/g, 'i')
+    .replace(/eau|au/g, 'o')
+    .replace(/ai|ei/g, 'e')
+    .replace(/ou/g, 'u')
+    .replace(/ee/g, 'i')
+    .replace(/(.)\1+/g, '$1');         // lettres doublées : Emma → Ema
+  // Finales muettes du français : e, s, puis d/t/x/z quand le mot est assez
+  // long pour que la consonne finale ne porte pas le sens (« Lénard » sonne
+  // comme « Lénar », mais « sad » n'est pas « sa »). Jamais sous 3 lettres.
+  let avant;
+  do {
+    avant = s;
+    if (s.length >= 4) s = s.replace(/e$/, '');
+    if (s.length >= 4) s = s.replace(/s$/, '');
+    if (s.length >= 5) s = s.replace(/[dtxz]$/, '');
+  } while (s !== avant);
+  return s;
+}
+
+// === Artiste : un mot du nom suffit ===
+// Mots qui n'identifient personne à eux seuls.
+const ARTIST_STOPWORDS = new Set((
+  'the a an and of or in on at to for with from by feat ft featuring vs dj mc mr mrs ms dr ' +
+  'le la les un une des du de et ou au aux en pour sur dans par ' +
+  'lil young big little los las el'
+).split(' '));
+
+function significantTokens(form) {
+  return tokens(form).filter(t => t.length > 1 && !ARTIST_STOPWORDS.has(t) && !/^\d+$/.test(t));
+}
+
+// Pour l'ARTISTE, un mot entier du nom suffit : « Franck » pour Franck Lénar,
+// « Stones » pour The Rolling Stones, « Aya » pour Aya Nakamura. Deux
+// conditions : chaque mot de la réponse (hors mots-outils et chiffres) est un
+// mot du nom, à l'orthographe près (comparaison phonétique) ; et il en reste
+// au moins un. « Franck Dubosc » ne vaut donc pas Franck Lénar — « Dubosc »
+// n'est pas dans le nom. Les titres n'ont pas cette règle : « Forever » ne
+// vaut pas Live Forever, ce sont deux morceaux différents.
+export function scoreArtistMatch(expected, candidate) {
+  const base = scoreMatch(expected, candidate);
+  if (base >= 0.9) return base;
+  for (const a of comparableForms(expected)) {
+    const nom = significantTokens(a).map(phoneticToken);
+    if (!nom.length) continue;
+    for (const b of comparableForms(candidate)) {
+      const reponse = significantTokens(b);
+      if (!reponse.length || reponse.length > nom.length) continue;
+      const libres = [...nom];
+      const tousDansLeNom = reponse.every(t => {
+        const i = libres.indexOf(phoneticToken(t));
+        if (i === -1) return false;
+        libres.splice(i, 1);
+        return true;
+      });
+      if (tousDansLeNom) return 0.9;
+    }
+  }
+  return base;
+}
+
 // Convenience: does this candidate "match" the expected value at threshold?
 export function isMatch(expected, candidate, threshold = 0.75) {
   return scoreMatch(expected, candidate) >= threshold;
@@ -196,7 +285,7 @@ export function calculateScore(answer, track, settings) {
   if (answer.artistAnswer && (track.artists || []).length) {
     // Take the best score across all artists (groups often have several).
     const best = Math.max(
-      ...track.artists.map(a => scoreMatch(a, answer.artistAnswer))
+      ...track.artists.map(a => scoreArtistMatch(a, answer.artistAnswer))
     );
     if (best >= threshold) scoreArtist = pointsArtist;
   }

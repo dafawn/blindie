@@ -5,7 +5,7 @@
 // pendant la partie. Chaque cas ci-dessous a été trouvé en cassant la version
 // précédente du moteur — ne pas les supprimer à la légère.
 
-import { normalizeText, scoreMatch, calculateScore } from '../js/utils.js';
+import { normalizeText, scoreMatch, scoreArtistMatch, calculateScore } from '../js/utils.js';
 import { appConfig } from '../js/config.js';
 
 const SEUIL = appConfig.matchThreshold;
@@ -81,18 +81,26 @@ cas('', 'bohemian rhapsody', false, 'attendu vide');
 cas('', '', false, 'les deux vides ne valent pas un match');
 
 // ---------------------------------------------------------------------------
-// Limites connues, assumées.
-//
-// Sur un mot UNIQUE, une faute de frappe et une mauvaise réponse sont
-// indiscernables : "afrika" pour "Africa" et "creepy" pour "Creep" sont à la
-// même distance. On refuse les deux plutôt que d'accepter les deux — un point
-// volé fausse le classement, un point refusé se conteste à voix haute.
-// L'ancien moteur refusait déjà ces cas ; ce ne sont pas des régressions.
-// Ces assertions figent le comportement actuel : si un jour il change, on le
-// verra ici au lieu de le découvrir en partie.
+// La règle d'orthographe : « écrit comme ça se prononce » passe, tout ce qui
+// change le son est refusé. Sur un mot unique, c'est la SEULE frontière qui
+// distingue une faute (« afrika ») d'une autre réponse (« creepy »), et elle
+// s'explique en une phrase à un joueur.
 // ---------------------------------------------------------------------------
-cas('Africa', 'afrika', false, 'faute de frappe sur un mot unique — non distinguable');
-cas('Papaoutai', 'papa ou t es', false, 'segmentation ET orthographe différentes');
+cas('Africa', 'afrika', true, 'même son, autre orthographe');
+cas('Papaoutai', 'papa ou t es', true, 'le jeu de mots du titre, écrit comme il se prononce');
+cas('Emma', 'ema', true, 'consonne doublée oubliée');
+cas('Emma', 'emmah', true, 'h muet ajouté');
+cas('Barbie', 'barby', true, 'y pour ie');
+cas('Barbie', 'barbi', true, 'e final oublié');
+cas('Bohemian Rhapsody', 'bohemian rapsody', true, 'h muet oublié');
+cas('Toto', 'totto', true, 'consonne doublée en trop');
+cas('Alors on danse', 'alor on dance', true, 's muet oublié, c pour s');
+cas('Emma', 'emmy', false, 'autre son, autre prénom');
+cas('Emma', 'ama', false, 'voyelle différente');
+cas('Emma', 'emmanuelle', false, 'autre prénom');
+cas('Barbie', 'barbe', false, 'autre son, autre mot');
+cas('Live', 'life', false, 'v et f ne se confondent pas');
+cas('Creep', 'creepy', false, 'syllabe en plus : un autre mot (répété ici pour la frontière)');
 
 // ---------------------------------------------------------------------------
 // normalizeText ne doit jamais renvoyer une chaîne vide pour un titre non vide
@@ -125,6 +133,50 @@ pts('nawak', 'nawak', u2, 0, 'deux réponses fausses');
 const groupeLive = { title: 'Lightning Crashes', artists: ['Live'] };
 pts('lightning crashes', 'live', groupeLive, 2, 'artiste nommé "Live"');
 pts('lightning crashes', 'mix', groupeLive, 1, 'artiste "Live" ne matche pas "mix"');
+
+const franck = { title: 'Quelque chose de Tennessee', artists: ['Franck Lénar'] };
+pts('', 'franck', franck, 1, 'un mot du nom de l\'artiste suffit');
+pts('', 'franck dubosc', franck, 0, 'un mot du nom + un mot étranger : refusé');
+pts('tennessee', 'lenar', franck, 1, 'nom de famille seul (le titre est incomplet)');
+
+// ---------------------------------------------------------------------------
+// Règle artiste : un mot entier du nom suffit, à la prononciation près.
+// Un mot-outil ou un chiffre ne compte pas. Un mot étranger au nom disqualifie.
+// ---------------------------------------------------------------------------
+function art(attendu, reponse, doitPasser, note) {
+  const score = scoreArtistMatch(attendu, reponse);
+  const passe = score >= SEUIL;
+  if (passe === doitPasser) { ok++; return; }
+  echecs.push({ attendu, reponse, score, passe, doitPasser, note: `[artiste] ${note}` });
+}
+art('Franck Lénar', 'franck', true, 'prénom seul');
+art('Franck Lénar', 'lenar', true, 'nom seul');
+art('Franck Lénar', 'frank', true, 'prénom seul, orthographe phonétique');
+art('Franck Lénar', 'franck lenard', true, 'd final muet');
+art('Franck Lénar', 'lenar franck', true, 'ordre inversé');
+art('Franck Lénar', 'franck dubosc', false, 'un mot du nom, un mot d\'un autre');
+art('Franck Lénar', 'francky', false, 'autre son');
+art('The Rolling Stones', 'stones', true, 'mot principal du groupe');
+art('The Rolling Stones', 'les stones', true, 'article français ignoré');
+art('The Rolling Stones', 'the', false, 'mot-outil seul');
+art('Aya Nakamura', 'aya', true, 'prénom court mais entier');
+art('Aya Nakamura', 'nakamoura', true, 'ou pour u');
+art('Lil Nas X', 'x', false, 'une lettre');
+art('Lil Nas X', 'lil', false, 'préfixe de scène, pas un nom');
+art('Maroon 5', '5', false, 'chiffre seul');
+art('Maroon 5', 'maroon', true, 'le mot du nom');
+art('Daft Punk', 'punk', true, 'conséquence assumée : c\'est un mot du nom');
+art('Michael Jackson', 'michael', true, 'conséquence assumée : prénom seul');
+art('Chris Brown', 'kris', true, '« chr » dur, k pour ch');
+// Limite assumée : « ch » se lit ici « k » (Michael → Mikaël), mais « ch » se lit
+// « ch » dans presque tous les autres mots (Michel, Charles). Le moteur ne peut
+// pas le savoir ; il refuse. Figé ici pour le voir si ça change.
+art('Michael Jackson', 'mickael', false, 'limite connue : ch dur imprévisible');
+art('Michael Jackson', 'jackson five', false, 'mot étranger au nom');
+art('Stromae', 'stroma', true, 'e final');
+art('Stromae', 'strauss', false, 'autre artiste');
+// Les titres n'ont PAS cette règle
+cas('Live Forever', 'forever', false, 'titre : un mot du titre ne suffit pas (rappel)');
 
 // ---------------------------------------------------------------------------
 // Rapport
