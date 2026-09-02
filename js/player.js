@@ -356,6 +356,7 @@ async function handleRoomUpdate(room) {
       $('play-round').textContent = room.currentRoundIndex + 1;
       if (room.totalRounds) $('play-round-total').textContent = room.totalRounds;
       $('play-timer').textContent = '0';
+      majBarre($('play-timer-bar'), 0, false);
       $('play-timer').classList.add('danger');
       $('answer-title').disabled = true;
       $('answer-artist').disabled = true;
@@ -389,6 +390,33 @@ async function handleRoomUpdate(room) {
 async function fetchCurrentTrackPublic(room) {
   if (room.currentRoundIndex == null) return null;
   return fetchTrackByOrder(state.roomId, room.currentRoundIndex);
+}
+
+// Le moment fort du round pour le joueur : un gros total, puis le détail
+// titre / artiste — pas une petite pastille perdue sous la pochette.
+function afficherMonResultat(reponse) {
+  const bloc = $('my-result');
+  const points = $('my-points');
+  const detail = $('my-detail');
+  bloc.classList.remove('good', 'mid', 'bad', 'none');
+  if (!reponse) {
+    points.textContent = '—';
+    detail.innerHTML = '<span class="verdict">Pas de réponse</span>';
+    bloc.classList.add('none');
+    return;
+  }
+  const total = reponse.totalScore || 0;
+  points.textContent = total > 0 ? `+${total} pt${total > 1 ? 's' : ''}` : '0 pt';
+  bloc.classList.add(total >= 2 ? 'good' : total === 1 ? 'mid' : 'bad');
+  detail.innerHTML =
+    verdict('Titre', reponse.titleAnswer, reponse.scoreTitle) +
+    verdict('Artiste', reponse.artistAnswer, reponse.scoreArtist);
+}
+
+function verdict(libelle, saisie, score) {
+  if (!saisie) return `<span class="verdict">${libelle} · non répondu</span>`;
+  const ok = (score || 0) > 0;
+  return `<span class="verdict ${ok ? 'ok' : 'ko'}">${icon(ok ? 'check' : 'x')} ${libelle}</span>`;
 }
 
 // === Lobby render ===
@@ -474,6 +502,15 @@ function resetAnswerForm() {
   $('btn-submit').innerHTML = icon('send') + ' Envoyer';
   // Reset timer cosmetics au cas où on revient de "locked"
   $('play-timer').classList.remove('danger');
+  majBarre($('play-timer-bar'), 1, false);
+}
+
+// Barre de temps sous le chiffre : la progression se voit, pas seulement se lit.
+function majBarre(bar, fraction, danger) {
+  if (!bar) return;
+  const f = Math.max(0, Math.min(1, fraction));
+  bar.style.width = `${f * 100}%`;
+  bar.classList.toggle('danger', danger && f > 0);
 }
 
 // === Timer (synced from server timestamp) ===
@@ -486,6 +523,7 @@ function startPlayerTimer(room) {
     const remaining = Math.max(0, Math.round((startedAt + duration - serverNow()) / 1000));
     $('play-timer').textContent = remaining;
     $('play-timer').classList.toggle('danger', remaining <= 5 && remaining > 0);
+    majBarre($('play-timer-bar'), (startedAt + duration - serverNow()) / duration, remaining <= 5);
     if (remaining <= 0) stopTimer();
   };
   update();
@@ -516,27 +554,7 @@ async function renderReveal(room) {
 
   // My result this round
   const myAnsRef = await findMyAnswerForRound(room.currentRoundIndex);
-  const result = $('my-points');
-  if (myAnsRef) {
-    const pts = myAnsRef.totalScore || 0;
-    if (pts >= 2) {
-      result.textContent = `✓✓ +${pts} pts`;
-      result.style.background = 'rgba(57,255,20,0.25)';
-      result.style.color = 'var(--neon-green)';
-    } else if (pts === 1) {
-      result.textContent = `± +1 pt`;
-      result.style.background = 'rgba(255,214,10,0.25)';
-      result.style.color = 'var(--neon-yellow)';
-    } else {
-      result.textContent = '✗ Raté';
-      result.style.background = 'rgba(255,51,85,0.25)';
-      result.style.color = 'var(--danger)';
-    }
-  } else {
-    result.textContent = '— Pas de réponse —';
-    result.style.background = 'rgba(184,168,212,0.15)';
-    result.style.color = 'var(--text-dim)';
-  }
+  afficherMonResultat(myAnsRef);
 
   // Apple Music link
   const appleLink = $('reveal-apple-link');
