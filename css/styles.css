@@ -629,6 +629,15 @@ input::placeholder { color: #8478a0; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Résultat iTunes retenu, sous le titre Spotify : vide tant qu'il n'y en a pas */
+.track-row .matched {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.track-row .matched:empty { display: none; }
 .track-row .status-pill {
   font-family: 'Bebas Neue', sans-serif;
   letter-spacing: 0.08em;

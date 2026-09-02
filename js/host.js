@@ -469,13 +469,14 @@ $('btn-load-playlist').addEventListener('click', async () => {
         <div class="meta">
           <div class="title">${escapeHtml(t.name)}</div>
           <div class="artist">${escapeHtml(formatArtists(t.artists))}</div>
+          <div class="matched"></div>
         </div>
         <span class="status-pill">…</span>
       </div>
     `).join('');
 
     let okN = 0, missingN = 0;
-    state.enriched = await enrichTracksWithPreviews(candidates, (track, done, total, idx) => {
+    state.enriched = await enrichTracksWithPreviews(candidates, (track, done, total, idx, preview) => {
       // idx = position originale dans candidates (les résultats arrivent
       // dans le désordre car les workers tournent en parallèle).
       const row = $(`track-list`).querySelector(`[data-idx="${idx}"]`);
@@ -483,11 +484,17 @@ $('btn-load-playlist').addEventListener('click', async () => {
         row.classList.remove('status-pending');
         if (track.playable) {
           row.classList.add('status-ok');
-          row.querySelector('.status-pill').textContent = '✓ preview';
+          row.querySelector('.status-pill').textContent = '✓ extrait';
+          // Ce qu'iTunes a réellement retenu : l'hôte repère d'un coup d'œil
+          // une reprise ou un autre morceau avant de lancer la partie.
+          if (preview) {
+            row.querySelector('.matched').textContent =
+              `♫ ${preview.matchedTrackName || '?'} — ${preview.matchedArtistName || '?'}`;
+          }
           okN++;
         } else {
           row.classList.add('status-missing');
-          row.querySelector('.status-pill').textContent = '✗ pas de preview';
+          row.querySelector('.status-pill').textContent = '✗ aucun extrait fiable';
           missingN++;
         }
       }
@@ -501,7 +508,7 @@ $('btn-load-playlist').addEventListener('click', async () => {
     const playable = state.enriched.filter(t => t.playable);
     if (playable.length < 3) {
       throw new Error(
-        `Seulement ${playable.length} morceaux ont une preview iTunes. ` +
+        `Seulement ${playable.length} morceaux ont un extrait iTunes fiable. ` +
         `Essaie une autre playlist (en général mainstream marche mieux).`
       );
     }
