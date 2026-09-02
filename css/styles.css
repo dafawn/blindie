@@ -639,7 +639,10 @@ input::placeholder { color: #8478a0; }
 @media (max-width: 600px) {
   .screen { padding: 1rem; gap: 1rem; }
   .card { padding: 1.3rem; border-radius: 16px; }
-  .album-art { width: 160px; height: 160px; }
+  /* Pochette plus petite : au reveal, elle poussait le résultat et le
+     classement sous le pli. */
+  .album-art { width: 140px; height: 140px; margin: 1rem auto; }
+  .now-playing { padding: 1rem 0.5rem; }
   .logo { font-size: 4rem; }
   .topbar { gap: 0.5rem; }
   .topbar .logo { font-size: 1.8rem; }
@@ -863,6 +866,95 @@ input::placeholder { color: #8478a0; }
 }
 .legal-footer a:hover {
   color: var(--neon-cyan);
+}
+
+/* === Barre de temps === */
+/* La progression se voit : un chiffre seul ne dit pas où l'on en est. */
+.timer-bar {
+  width: min(100%, 320px);
+  height: 6px;
+  margin: 0.2rem auto 0;
+  background: rgba(10, 1, 24, 0.6);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.timer-bar .bar {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--neon-yellow), #ffb300);
+  box-shadow: 0 0 10px rgba(255, 214, 10, 0.6);
+  transition: width 0.5s linear, background 0.3s;
+}
+.timer-bar .bar.danger {
+  background: var(--danger);
+  box-shadow: 0 0 10px rgba(255, 51, 85, 0.7);
+}
+
+/* === Résultat du joueur au reveal === */
+.my-result {
+  text-align: center;
+  margin-top: 0.4rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  background: rgba(10, 1, 24, 0.5);
+  border: 1px solid rgba(177, 74, 237, 0.3);
+}
+.my-result .my-points {
+  font-family: 'Bebas Neue', 'Impact', sans-serif;
+  font-size: 2.8rem;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.my-result.good { border-color: rgba(57, 255, 20, 0.4); background: rgba(57, 255, 20, 0.08); }
+.my-result.good .my-points { color: var(--neon-green); text-shadow: 0 0 20px rgba(57, 255, 20, 0.6); }
+.my-result.mid { border-color: rgba(255, 214, 10, 0.4); background: rgba(255, 214, 10, 0.08); }
+.my-result.mid .my-points { color: var(--neon-yellow); text-shadow: 0 0 20px rgba(255, 214, 10, 0.6); }
+.my-result.bad { border-color: rgba(255, 51, 85, 0.4); background: rgba(255, 51, 85, 0.08); }
+.my-result.bad .my-points { color: var(--danger); text-shadow: 0 0 20px rgba(255, 51, 85, 0.6); }
+.my-detail {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: rgba(177, 74, 237, 0.2);
+  color: var(--text-dim);
+}
+.verdict.ok { background: rgba(57, 255, 20, 0.18); color: var(--neon-green); }
+.verdict.ko { background: rgba(255, 51, 85, 0.18); color: #ffb3c0; }
+.verdict .ico { width: 1em; height: 1em; stroke-width: 2.5; }
+
+/* === Joueurs en puces (lobby joueur) === */
+/* Une ligne pleine largeur par joueur ne montrait que cinq personnes ; en
+   puces qui s'enchaînent, on en voit dix d'un coup. */
+.player-list-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.player-list-inline .player-chip {
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
+/* Point « connecté » côté hôte, en CSS plutôt qu'en emoji */
+.player-chip .online {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--neon-green);
+  box-shadow: 0 0 8px rgba(57, 255, 20, 0.8);
+  flex: none;
 }
 
 /* === Focus clavier === */

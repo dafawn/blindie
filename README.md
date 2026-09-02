@@ -358,6 +358,7 @@ Fait (audit d'août 2026, cf. [`AUDIT.md`](AUDIT.md)) :
 - [x] Extrait iTunes : reprises et homonymes refusés, artiste obligatoire, magasin local puis US (`tools/test-previews.mjs`)
 - [x] Orthographe phonétique et « un mot du nom de l'artiste suffit » (`tools/test-scoring.mjs`), règle affichée au joueur
 - [x] Passe design : barre du haut fixe et alignée, fil d'étapes, boutons bornés sur grand écran, icônes SVG au lieu des emojis, état Spotify explicite, page qui défile normalement
+- [x] Passe design joueur : résultat du round en grand avec verdict titre / artiste, barre de temps sous le chrono, joueurs du salon en puces
 
 Reste à faire :
 

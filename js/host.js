@@ -412,6 +412,7 @@ async function resumeRound(room) {
     $('btn-stop-audio').disabled = false;
     $('timer').textContent = '0';
     $('timer').classList.add('danger');
+    majBarre($('timer-bar'), 0, false);
   }
 
   if (state.unsubAnswers) state.unsubAnswers();
@@ -602,7 +603,7 @@ function renderLobbyPlayers() {
   list.innerHTML = state.players.map(p => `
     <div class="player-chip">
       <span class="name">${escapeHtml(p.name)}</span>
-      <span style="color: var(--neon-green);">🟢</span>
+      <span class="online" title="connecté"></span>
     </div>
   `).join('');
   $('btn-start-game').disabled = false;
@@ -804,8 +805,18 @@ async function playRound() {
 // C'est ce qui lui permet de se corriger tout seul : au démarrage d'un round
 // l'ancre n'est qu'une estimation locale, et elle est remplacée par la valeur
 // exacte du serveur dès que le snapshot du doc room arrive.
+
+// Barre de temps sous le chiffre : la progression se voit, pas seulement se lit.
+function majBarre(bar, fraction, danger) {
+  if (!bar) return;
+  const f = Math.max(0, Math.min(1, fraction));
+  bar.style.width = `${f * 100}%`;
+  bar.classList.toggle('danger', danger && f > 0);
+}
+
 function startTimer(durationSeconds) {
   clearInterval(state.timerInterval);
+  majBarre($('timer-bar'), 1, false);
   let verrouille = false;
 
   const tick = async () => {
@@ -814,6 +825,7 @@ function startTimer(durationSeconds) {
     const remaining = Math.max(0, Math.ceil((debut + durationSeconds * 1000 - serverNow()) / 1000));
     $('timer').textContent = remaining;
     $('timer').classList.toggle('danger', remaining <= 5);
+    majBarre($('timer-bar'), (debut + durationSeconds * 1000 - serverNow()) / (durationSeconds * 1000), remaining <= 5);
     if (remaining > 0 || verrouille) return;
 
     verrouille = true;
