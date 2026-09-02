@@ -99,14 +99,19 @@
         <label class="field">
           <span class="field-label">Titre du morceau</span>
           <input id="answer-title" type="text" placeholder="Ex. Bohemian Rhapsody"
-                 autocomplete="off" maxlength="120" aria-describedby="submit-feedback">
+                 autocomplete="off" maxlength="120" aria-describedby="answer-help submit-feedback">
         </label>
         <label class="field">
           <span class="field-label">Artiste(s)</span>
           <input id="answer-artist" type="text" placeholder="Ex. Queen"
-                 autocomplete="off" maxlength="120" aria-describedby="submit-feedback">
+                 autocomplete="off" maxlength="120" aria-describedby="answer-help submit-feedback">
         </label>
       </div>
+      <!-- La règle du jeu, visible avant de répondre : personne ne pourra dire
+           qu'il ne savait pas. Elle reflète scoreMatch / scoreArtistMatch. -->
+      <p id="answer-help" class="muted answer-help">
+        Écris comme ça se prononce. Pour l'artiste, un mot de son nom suffit.
+      </p>
 
       <button id="btn-submit" class="btn btn-primary" style="margin-top:1rem;">
         🚨 ENVOYER

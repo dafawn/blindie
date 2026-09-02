@@ -467,6 +467,7 @@ input::placeholder { color: #8478a0; }
 .col { display: flex; flex-direction: column; gap: 1rem; }
 .hidden { display: none !important; }
 .muted { color: var(--text-dim); font-size: 0.9rem; }
+.answer-help { margin: 0.6rem 0 0; font-size: 0.82rem; line-height: 1.4; }
 .tag {
   display: inline-block;
   background: rgba(177, 74, 237, 0.28);
