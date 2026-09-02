@@ -76,6 +76,14 @@ function showStep(name) {
   steps.forEach(s => $(`step-${s}`).classList.toggle('hidden', s !== name));
   $('mini-score').classList.toggle('hidden', !['playing', 'reveal'].includes(name));
   $('new-game-bar').classList.toggle('hidden', !['lobby', 'playing', 'reveal', 'finished'].includes(name));
+  // Fil des étapes : Playlist › Salon › Partie
+  const etape = { import: 0, lobby: 1, playing: 2, reveal: 2, finished: 3 }[name];
+  $('steps').classList.toggle('hidden', etape === undefined);
+  $('steps').querySelectorAll('li').forEach((li, i) => {
+    li.classList.toggle('is-current', i === etape);
+    li.classList.toggle('is-done', etape !== undefined && i < etape);
+    if (i === etape) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+  });
   state.step = name;
   // Le focus suit l'écran affiché — sans ça il restait sur le bouton cliqué,
   // dans une section devenue invisible.
@@ -123,25 +131,32 @@ const state = {
   joinUrl: '',           // URL d'invitation, utilisée par les boutons "Copier le lien"
 };
 
-// === Spotify status chip ===
+// Icône monochrome du sprite inline (voir le <svg> en tête de host.html).
+function icon(name) {
+  return `<svg class="ico" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+}
+
+// === Pastille d'état Spotify ===
+// Elle dit son état en toutes lettres : « ● Spotify » ne permettait pas de
+// savoir si l'on était connecté ou non.
 async function refreshSpotifyChip() {
   const chip = $('spotify-status');
-  if (isLoggedIn()) {
-    try {
-      const me = await getCurrentSpotifyUser();
-      chip.textContent = `🎧 ${me.display_name || me.id}`;
-      chip.style.background = 'rgba(29, 185, 84, 0.25)';
-      chip.style.color = '#39ff14';
-      chip.style.cursor = 'pointer';
-      chip.title = "Cliquer pour se déconnecter";
-      chip.onclick = () => { logout(); window.location.reload(); };
-    } catch {
-      logout();
-      chip.textContent = '⏺ Spotify';
-    }
-  } else {
-    chip.textContent = '⏺ Spotify';
-    chip.style.cursor = 'default';
+  const deconnecte = () => {
+    chip.textContent = 'Spotify non connecté';
+    chip.classList.remove('on');
+    chip.title = '';
+    chip.onclick = null;
+  };
+  if (!isLoggedIn()) return deconnecte();
+  try {
+    const me = await getCurrentSpotifyUser();
+    chip.textContent = `Spotify · ${me.display_name || me.id}`;
+    chip.classList.add('on');
+    chip.title = "Cliquer pour se déconnecter";
+    chip.onclick = () => { logout(); window.location.reload(); };
+  } catch {
+    logout();
+    deconnecte();
   }
 }
 
@@ -380,7 +395,7 @@ async function resumeRound(room) {
       // Autoplay refusé après refresh : tant pis, le host peut cliquer Rejouer.
       console.warn('Resume audio bloqué', err);
     }
-    $('btn-stop-audio').textContent = '⏹ Stop & révéler';
+    $('btn-stop-audio').innerHTML = icon('stop') + ' Stop & révéler';
     $('btn-stop-audio').disabled = false;
     // startedAtMs peut être null si le timestamp serveur n'est pas encore
     // résolu côté client — on retombe sur l'instant courant.
@@ -393,7 +408,7 @@ async function resumeRound(room) {
       try { await lockRound(state.roomId); }
       catch (e) { console.warn('Catch-up lock failed', e); }
     }
-    $('btn-stop-audio').textContent = '🎯 Révéler';
+    $('btn-stop-audio').innerHTML = icon('eye') + ' Révéler';
     $('btn-stop-audio').disabled = false;
     $('timer').textContent = '0';
     $('timer').classList.add('danger');
@@ -663,13 +678,14 @@ async function renderJoinQR(url) {
 }
 
 function flashButton(btn, label, ms = 1400) {
-  const prev = btn.dataset.prevLabel || btn.textContent;
+  // innerHTML, pas textContent : le bouton contient une icône SVG à restaurer.
+  const prev = btn.dataset.prevLabel || btn.innerHTML;
   btn.dataset.prevLabel = prev;
   btn.textContent = label;
   btn.classList.add('success-flash');
   clearTimeout(btn._flashTimer);
   btn._flashTimer = setTimeout(() => {
-    btn.textContent = prev;
+    btn.innerHTML = prev;
     btn.classList.remove('success-flash');
     btn.dataset.prevLabel = '';
   }, ms);
@@ -743,7 +759,7 @@ async function playRound() {
   $('answer-count').textContent = '0';
   hideError('round-error');
   // Reset le bouton de fin de round à son libellé initial
-  $('btn-stop-audio').textContent = '⏹ Stop & révéler';
+  $('btn-stop-audio').innerHTML = icon('stop') + ' Stop & révéler';
   $('btn-stop-audio').disabled = false;
 
   // Audio host : joue la piste pour le présentateur. Chaque joueur a aussi
@@ -814,7 +830,7 @@ function startTimer(durationSeconds) {
         "Vérifie ta connexion, puis clique sur Révéler.");
     }
     // Le bouton change de libellé pour refléter l'état "locked"
-    $('btn-stop-audio').textContent = '🎯 Révéler';
+    $('btn-stop-audio').innerHTML = icon('eye') + ' Révéler';
   };
 
   // L'intervalle est armé AVANT le premier tick : si le round est déjà écoulé
@@ -872,7 +888,7 @@ $('btn-stop-audio').addEventListener('click', async () => {
     alert("Erreur pendant le reveal : " + e.message);
   } finally {
     $('btn-stop-audio').disabled = false;
-    $('btn-stop-audio').textContent = '⏹ Stop & révéler';
+    $('btn-stop-audio').innerHTML = icon('stop') + ' Stop & révéler';
   }
 });
 

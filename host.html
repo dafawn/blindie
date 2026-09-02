@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>BLINDIE · Host</title>
+  <title>BLINDIE · Hôte</title>
   <meta name="description" content="Importe une playlist Spotify, lance un quiz musical et défie tes amis en direct !">
   <meta property="og:title" content="BLINDIE · Le blind test des playlists perso">
   <meta property="og:description" content="Importe une playlist Spotify, lance un quiz musical et défie tes amis en direct !">
@@ -32,33 +32,66 @@
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <main class="screen">
-    <div class="row" style="width:100%; max-width:720px; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);">
-      <a id="lnk-home" href="./index.html" class="btn btn-ghost btn-sm" style="justify-self:start;">← Accueil</a>
-      <h1 class="logo" style="font-size: 2.2rem; line-height:1; margin:0;">BLINDIE</h1>
-      <span id="spotify-status" class="tag" style="justify-self:end;">⏺ Spotify</span>
-    </div>
+  <!-- Icônes monochromes : elles héritent de la couleur du texte et se dessinent
+       pareil sur tous les appareils, là où les emojis changent d'un système à
+       l'autre et jurent avec la palette néon. -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 4.5v15a1 1 0 0 0 1.5.87l13-7.5a1 1 0 0 0 0-1.74l-13-7.5A1 1 0 0 0 7 4.5z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect fill="currentColor" stroke="none" x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-replay" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v4M17 21h4"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></symbol>
+    <symbol id="i-login" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></symbol>
+    <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9.9 9.9 0 0 1 0 14"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  </svg>
+  <main class="screen screen-app">
+    <header class="topbar">
+      <div class="left">
+        <a id="lnk-home" href="./index.html" class="btn btn-ghost btn-sm"><svg class="ico" aria-hidden="true"><use href="#i-arrow-left"/></svg> Accueil</a>
+      </div>
+      <h1 class="logo">BLINDIE</h1>
+      <div class="right">
+        <!-- Sortie de secours : visible dès qu'une partie est active. La session
+             hôte vit en localStorage pour survivre à la fermeture de l'onglet —
+             il faut donc un moyen explicite d'en sortir, sinon l'hôte reste collé
+             à sa dernière partie sans pouvoir en créer une autre. -->
+        <span id="new-game-bar" class="hidden">
+          <button id="btn-new-game" class="btn btn-ghost btn-sm"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg> Nouvelle partie</button>
+        </span>
+        <span id="spotify-status" class="status-chip">Spotify non connecté</span>
+      </div>
+    </header>
 
-    <!-- Sortie de secours : visible dès qu'une room est active. La session hôte
-         vit en localStorage pour survivre à la fermeture de l'onglet — il faut
-         donc un moyen explicite d'en sortir, sinon l'hôte reste collé à sa
-         dernière partie sans pouvoir en créer une autre. -->
-    <div id="new-game-bar" class="row hidden" style="width:100%; max-width:720px; justify-content:flex-end;">
-      <button id="btn-new-game" class="btn btn-ghost btn-sm">✚ Nouvelle partie</button>
-    </div>
+    <!-- Fil des étapes : remplace la numérotation dans les titres, qui
+         s'arrêtait au salon. -->
+    <ol id="steps" class="steps hidden" aria-label="Étapes">
+      <li><span class="n">1</span>Playlist</li>
+      <li><span class="n">2</span>Salon</li>
+      <li><span class="n">3</span>Partie</li>
+    </ol>
 
     <!-- STEP 1 — Spotify login -->
     <section id="step-login" class="card hidden">
       <h2>Connexion Spotify</h2>
-      <p>L'host se connecte à Spotify uniquement pour importer une playlist
+      <p>L'hôte se connecte à Spotify uniquement pour importer une playlist
          (titres, artistes, pochette). L'audio sera fourni par iTunes.</p>
-      <button id="btn-spotify-login" class="btn btn-spotify">🎧 Se connecter à Spotify</button>
+      <button id="btn-spotify-login" class="btn btn-spotify"><svg class="ico" aria-hidden="true"><use href="#i-headphones"/></svg> Se connecter à Spotify</button>
       <div id="login-error" class="error hidden" role="alert"></div>
     </section>
 
     <!-- STEP 2 — Import playlist -->
     <section id="step-import" class="card card-lg hidden">
-      <h2>1. Importer la playlist</h2>
+      <h2>Importer la playlist</h2>
       <p>Colle l'URL d'une playlist Spotify (publique ou perso).</p>
       <label class="field">
         <span class="field-label">URL ou identifiant de la playlist</span>
@@ -66,7 +99,7 @@
                autocomplete="off" spellcheck="false" aria-describedby="import-error">
       </label>
       <button id="btn-load-playlist" class="btn btn-primary" style="margin-top:0.8rem;">
-        ➜ Charger la playlist
+        <svg class="ico" aria-hidden="true"><use href="#i-arrow-right"/></svg> Charger la playlist
       </button>
 
       <div id="playlist-meta-block" class="hidden" style="margin-top:1rem;">
@@ -85,7 +118,7 @@
       </div>
 
       <button id="btn-create-room" class="btn btn-primary hidden" style="margin-top:1rem;">
-        🚀 Créer la room
+        <svg class="ico" aria-hidden="true"><use href="#i-arrow-right"/></svg> Ouvrir le salon
       </button>
 
       <div id="import-error" class="error hidden" role="alert"></div>
@@ -93,7 +126,7 @@
 
     <!-- STEP 3 — Lobby -->
     <section id="step-lobby" class="card card-lg hidden">
-      <h2>2. Salon d'attente</h2>
+      <h2>Salon d'attente</h2>
       <p>Code à taper <strong>ou</strong> QR à flasher :</p>
       <div class="join-share">
         <div id="room-code" class="room-code copiable" role="button" tabindex="0"
@@ -105,8 +138,8 @@
            style="color: var(--neon-cyan);" title="Cliquer pour copier le lien"></code>
       </p>
       <div class="row" style="justify-content:center; margin-top:0.6rem; flex-wrap:wrap;">
-        <button id="btn-copy-url" class="btn btn-secondary btn-sm">📋 Copier le lien</button>
-        <button id="btn-copy-qr" class="btn btn-ghost btn-sm">🖼 Copier le QR</button>
+        <button id="btn-copy-url" class="btn btn-secondary btn-sm"><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg> Copier le lien</button>
+        <button id="btn-copy-qr" class="btn btn-ghost btn-sm"><svg class="ico" aria-hidden="true"><use href="#i-qr"/></svg> Copier le QR</button>
       </div>
 
       <h3 style="margin-top:1.5rem;">Joueurs connectés <span id="player-count" class="tag">0</span></h3>
@@ -116,7 +149,7 @@
 
       <div class="btn-row" style="margin-top:1.5rem;">
         <button id="btn-start-game" class="btn btn-primary" disabled>
-          🚀 Démarrer la partie
+          <svg class="ico" aria-hidden="true"><use href="#i-play"/></svg> Démarrer la partie
         </button>
         <button id="btn-cancel-room" class="btn btn-ghost">Annuler</button>
       </div>
@@ -129,8 +162,8 @@
         <div class="album-art mystery" id="album-art"></div>
         <div class="timer" id="timer">30</div>
         <div class="btn-row" style="justify-content:center; margin-top:1rem; max-width:520px; margin-inline:auto;">
-          <button id="btn-replay" class="btn btn-ghost btn-sm">🔁 Rejouer</button>
-          <button id="btn-stop-audio" class="btn btn-warn btn-sm">⏹ Stop & révéler</button>
+          <button id="btn-replay" class="btn btn-ghost btn-sm"><svg class="ico" aria-hidden="true"><use href="#i-replay"/></svg> Rejouer</button>
+          <button id="btn-stop-audio" class="btn btn-warn btn-sm"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg> Stop & révéler</button>
         </div>
       </div>
 
@@ -153,11 +186,11 @@
       <div id="reveal-answers" style="margin-top:0.8rem;"></div>
 
       <a id="reveal-apple-link" class="btn-apple-music hidden" href="#" target="_blank" rel="noopener">
-        🎵 Écouter sur Apple Music
+        <svg class="ico" aria-hidden="true"><use href="#i-music"/></svg> Écouter sur Apple Music
       </a>
 
       <div class="btn-row" style="margin-top:1.5rem;">
-        <button id="btn-next-round" class="btn btn-primary">➜ Round suivant</button>
+        <button id="btn-next-round" class="btn btn-primary"><svg class="ico" aria-hidden="true"><use href="#i-arrow-right"/></svg> Round suivant</button>
         <button id="btn-end-game" class="btn btn-ghost">Fin de partie</button>
       </div>
     </section>
@@ -166,8 +199,8 @@
     <section id="step-finished" class="card card-lg hidden">
       <h2 class="center" style="font-family: 'Bebas Neue'; font-size: 3rem; color: var(--neon-yellow); text-shadow: 0 0 30px rgba(255,214,10,0.5);">🏆 PODIUM 🏆</h2>
       <div id="final-scoreboard" class="scoreboard" style="margin-top:1.5rem;"></div>
-      <button id="btn-back-home-host" class="btn btn-primary" style="margin-top:1.5rem;">
-        🏠 Retour à l'accueil
+      <button id="btn-back-home-host" class="btn btn-primary btn-center" style="margin-top:1.5rem;">
+        <svg class="ico" aria-hidden="true"><use href="#i-home"/></svg> Retour à l'accueil
       </button>
     </section>
 

@@ -25,6 +25,11 @@ const PREVIEW_SECONDS = 30;
 
 const $ = id => document.getElementById(id);
 
+// Icône monochrome du sprite inline (voir le <svg> en tête de player.html).
+function icon(name) {
+  return `<svg class="ico" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+}
+
 const states = ['join', 'lobby', 'playing', 'reveal', 'finished'];
 let etatCourant = null;
 
@@ -350,14 +355,14 @@ async function handleRoomUpdate(room) {
       showState('playing');
       $('play-round').textContent = room.currentRoundIndex + 1;
       if (room.totalRounds) $('play-round-total').textContent = room.totalRounds;
-      $('play-timer').textContent = '🔒';
+      $('play-timer').textContent = '0';
       $('play-timer').classList.add('danger');
       $('answer-title').disabled = true;
       $('answer-artist').disabled = true;
       $('btn-submit').disabled = true;
-      $('btn-submit').textContent = '🔒 Verrouillé';
+      $('btn-submit').innerHTML = icon('lock') + ' Verrouillé';
       $('submit-feedback').classList.remove('hidden');
-      $('submit-feedback').textContent = '⏳ Temps écoulé — en attente du reveal…';
+      $('submit-feedback').textContent = 'Temps écoulé, en attente de la révélation…';
       break;
 
     case 'reveal':
@@ -435,7 +440,7 @@ $('btn-submit').addEventListener('click', async () => {
     // Allow re-submission
     setTimeout(() => {
       $('btn-submit').disabled = false;
-      $('btn-submit').textContent = '↻ Modifier ma réponse';
+      $('btn-submit').innerHTML = icon('replay') + ' Modifier ma réponse';
     }, 800);
   } catch (e) {
     console.error(e);
@@ -466,7 +471,7 @@ function resetAnswerForm() {
   $('answer-artist').disabled = false;
   $('submit-feedback').classList.add('hidden');
   $('btn-submit').disabled = false;
-  $('btn-submit').textContent = '🚨 ENVOYER';
+  $('btn-submit').innerHTML = icon('send') + ' Envoyer';
   // Reset timer cosmetics au cas où on revient de "locked"
   $('play-timer').classList.remove('danger');
 }
@@ -595,7 +600,7 @@ function unlockAudio() {
     keepWakeLockOnVisibility();
     // Bouton lobby : transformation visuelle
     const btn = $('btn-unlock-audio');
-    btn.textContent = '🔊 Son activé ✓';
+    btn.innerHTML = icon('volume') + ' Son activé ✓';
     btn.classList.remove('btn-primary');
     btn.classList.add('btn-success');
     btn.disabled = true;
