@@ -34,9 +34,17 @@
 <body>
   <main class="screen">
     <div class="row" style="width:100%; max-width:720px; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);">
-      <a href="./index.html" class="btn btn-ghost btn-sm" style="justify-self:start;">← Accueil</a>
+      <a id="lnk-home" href="./index.html" class="btn btn-ghost btn-sm" style="justify-self:start;">← Accueil</a>
       <h1 class="logo" style="font-size: 2.2rem; line-height:1; margin:0;">BLINDIE</h1>
       <span id="spotify-status" class="tag" style="justify-self:end;">⏺ Spotify</span>
+    </div>
+
+    <!-- Sortie de secours : visible dès qu'une room est active. La session hôte
+         vit en localStorage pour survivre à la fermeture de l'onglet — il faut
+         donc un moyen explicite d'en sortir, sinon l'hôte reste collé à sa
+         dernière partie sans pouvoir en créer une autre. -->
+    <div id="new-game-bar" class="row hidden" style="width:100%; max-width:720px; justify-content:flex-end;">
+      <button id="btn-new-game" class="btn btn-ghost btn-sm">✚ Nouvelle partie</button>
     </div>
 
     <!-- STEP 1 — Spotify login -->
