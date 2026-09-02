@@ -75,6 +75,7 @@ function showStep(name) {
   const change = name !== state.step;
   steps.forEach(s => $(`step-${s}`).classList.toggle('hidden', s !== name));
   $('mini-score').classList.toggle('hidden', !['playing', 'reveal'].includes(name));
+  $('new-game-bar').classList.toggle('hidden', !['lobby', 'playing', 'reveal', 'finished'].includes(name));
   state.step = name;
   // Le focus suit l'écran affiché — sans ça il restait sur le bouton cliqué,
   // dans une section devenue invisible.
@@ -258,6 +259,13 @@ async function demarrer() {
 
   await avecDelaiMax(refreshSpotifyChip(), 5000);
 
+  // ?new=1 : l'hôte veut repartir de zéro. On oublie la room sauvegardée
+  // avant même d'essayer de la retrouver.
+  if (new URLSearchParams(window.location.search).has('new')) {
+    hostSession.clear();
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
   // Si on a une room hôte sauvegardée et que le uid match, on saute
   // directement à l'étape correspondante au lieu de re-passer par l'import.
   if (await tryRehydrateHostSession()) return;
@@ -294,6 +302,12 @@ async function tryRehydrateHostSession() {
   }
 
   if (!room || room.hostId !== state.hostId) {
+    hostSession.clear();
+    return false;
+  }
+  // Une partie terminée n'a rien à reprendre : rester dessus empêchait
+  // simplement l'hôte d'en lancer une autre.
+  if (room.status === 'finished') {
     hostSession.clear();
     return false;
   }
@@ -1001,6 +1015,28 @@ function showError(id, msg) {
   el.classList.remove('hidden');
 }
 function hideError(id) { $(id).classList.add('hidden'); }
+
+// Le lien "← Accueil" de l'en-tête n'effaçait pas la session : revenir à
+// l'accueil puis cliquer "Créer une partie" ramenait sur la même room.
+$('lnk-home').addEventListener('click', () => hostSession.clear());
+
+// Quitter la partie en cours pour en créer une autre. On la TERMINE plutôt que
+// de la supprimer : les joueurs voient le podium avec les scores acquis au lieu
+// d'un écran qui ne mène nulle part. Borné : cette sortie ne doit jamais
+// elle-même rester suspendue si la base ne répond pas.
+once($('btn-new-game'), async () => {
+  if (!confirm("Terminer la partie en cours et en créer une nouvelle ?")) return;
+  clearInterval(state.timerInterval);
+  if (state.audio) state.audio.pause();
+  if (state.unsubAnswers) state.unsubAnswers();
+  if (state.unsubPlayers) state.unsubPlayers();
+  if (state.unsubRoom) state.unsubRoom();
+  if (state.roomId && state.step !== 'finished') {
+    await avecDelaiMax(endGame(state.roomId), 3000);
+  }
+  hostSession.clear();
+  window.location.href = './host.html';
+});
 
 $('btn-back-home-host').addEventListener('click', () => {
   hostSession.clear();
