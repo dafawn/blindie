@@ -41,18 +41,26 @@ Web app privée de blind test entre potes (parties à distance via Discord). **S
 6. Pousse les règles Firestore versionnées (cf. §5) :
    - Soit via **Firebase Console → Firestore → Rules** : copier-coller le contenu de [`firestore.rules`](firestore.rules) puis **Publier**.
    - Soit via Firebase CLI : `firebase deploy --only firestore:rules`.
-7. **Active la purge automatique des rooms** — sinon chaque partie laisse
-   derrière elle son doc room, ses tracks et ses players, pour toujours :
-   **Firestore Database → Time-to-live → Create policy**
-   - Collection group : `rooms`
-   - Timestamp field : `expiresAt`
+7. **Purge des parties passées — rien à faire.** L'hôte s'en charge : il tient
+   dans son `localStorage` la liste des parties qu'il a créées, et supprime au
+   chargement suivant celles dont `expiresAt` est dépassé (24 h, cf.
+   `ROOM_TTL_MS` dans [`js/room.js`](js/room.js)) — document room **et**
+   sous-collections, via le même `deleteRoom()` que le bouton « Annuler ».
+   Bornes : 5 suppressions par chargement, 3 tentatives par partie, registre
+   plafonné à 40 entrées ; la partie en cours n'est jamais touchée, même
+   périmée. Le ménage tourne en arrière-plan après l'affichage.
 
-   Le champ `expiresAt` est écrit à la création de la room (createdAt + 24 h,
-   cf. `ROOM_TTL_MS` dans [`js/room.js`](js/room.js)). Firestore supprime le
-   document dans les 24 h qui suivent l'échéance. Les sous-collections
-   (`tracks`, `players`, `answers`) ne sont PAS supprimées par le TTL : le
-   bouton « Annuler » du lobby appelle `deleteRoom()` qui, lui, fait le ménage
-   complet.
+   Portée : les parties créées depuis **ce navigateur**. Les règles interdisent
+   d'énumérer les rooms et n'autorisent leur suppression qu'à leur hôte, donc
+   balayer la base entière est impossible depuis le client — c'est voulu.
+
+   *Optionnel, en complément* : une politique TTL Firestore sur le champ
+   `expiresAt` du groupe de collections `rooms` (**console Google Cloud →
+   Firestore → Valeur TTL → Créer une règle**) rattrape les parties créées
+   depuis un autre appareil. Elle ne remplace pas la purge côté hôte : le TTL
+   supprime le document room et **laisse ses sous-collections orphelines**.
+   Elle demande le droit `datastore.databases.update` sur le projet Google
+   Cloud ; un 403 à la création signifie que le compte connecté ne l'a pas.
 
 > Les clés Firebase web sont **publiques** par nature — la sécurité repose entièrement sur les règles Firestore + Auth anonyme.
 
@@ -260,7 +268,7 @@ rooms/{roomId}
   roomId, joinCode, hostId,
   status: "lobby" | "playing" | "locked" | "reveal" | "finished",
   currentRoundIndex, currentRoundStartedAt, revealedTrackId,
-  createdAt, expiresAt (purge TTL, cf. §1.7), totalRounds,
+  createdAt, expiresAt (échéance de purge, cf. §5), totalRounds,
   settings: { roundDurationSeconds, pointsTitle, pointsArtist }
   → le host lit la durée et le barème DANS settings, pas dans appConfig :
     sinon son horloge et celle des joueurs divergent.
@@ -343,7 +351,7 @@ Fait (audit d'août 2026, cf. [`AUDIT.md`](AUDIT.md)) :
 - [x] Gestionnaires d'erreur sur tous les listeners Firestore
 - [x] Timer host ancré sur une date, plus de dérive en onglet inactif
 - [x] Suppression du heartbeat `lastSeen` (77 % des lectures Firestore, champ jamais lu)
-- [x] Purge automatique des rooms via TTL Firestore (cf. §1.7)
+- [x] Purge automatique des parties passées, document et sous-collections (cf. §5)
 - [x] Libellés de formulaire, contrastes WCAG AA, `prefers-reduced-motion`
 - [x] Manifest PWA (icônes `any` + `maskable` séparées)
 - [x] Le host écoute le doc room : divergence et second onglet détectés

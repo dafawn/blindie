@@ -29,7 +29,7 @@ const answerDoc = (roomId, playerId) => doc(db, 'rooms', roomId, 'answers', play
 // ===================================================================
 
 // Durée de vie d'une room avant purge automatique par le TTL Firestore.
-const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Creates a new room owned by hostId. Picks a 6-char joinCode (cryptographic
 // random) that is also used as the document ID (collisions are retried).
@@ -60,11 +60,11 @@ export async function createRoom(hostId) {
       currentRoundStartedAt: null,
       revealedTrackId: null,
       createdAt: serverTimestamp(),
-      // Purge automatique : une politique TTL Firestore sur ce champ supprime
-      // la room 24 h après sa création (cf. README §5). Sans ça, chaque partie
-      // laisse derrière elle son doc room, ses tracks et ses players — pour
-      // toujours. Le champ est posé côté client : la valeur exacte importe
-      // peu, seule compte sa présence pour que le TTL s'applique.
+      // Échéance de purge : passée cette date, l'hôte supprime la partie au
+      // chargement suivant (registre localStorage + deleteRoom, cf. README §5).
+      // Sans ça, chaque partie laisse derrière elle son doc room, ses tracks,
+      // ses players et leurs réponses — pour toujours. Le champ sert aussi de
+      // point d'appui à une politique TTL Firestore, si elle est configurée.
       expiresAt: Timestamp.fromMillis(Date.now() + ROOM_TTL_MS),
       settings,
     });

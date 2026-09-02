@@ -19,7 +19,7 @@ import {
   createRoom, getRoom, addTracksToRoom, fetchRoomTracks,
   startRound, lockRound, revealRound, endGame,
   scoreRound, fetchAnswersForRound,
-  listenPlayers, listenAnswers, listenRoom, deleteRoom,
+  listenPlayers, listenAnswers, listenRoom, deleteRoom, roomExists, ROOM_TTL_MS,
 } from './room.js';
 import {
   escapeHtml, formatArtists, safeImageUrl, safeExternalUrl, shuffled,
@@ -241,6 +241,83 @@ const hostSession = {
   clear: () => localStorage.removeItem(HOST_SESSION_KEY),
 };
 
+// === Purge des parties passées ===
+//
+// Chaque partie laisse un document room, ses morceaux, ses joueurs et leurs
+// réponses. Rien ne les supprimait : la base grossit à chaque soirée.
+//
+// La politique TTL de Firestore (cf. README §5) ne suffit pas — elle supprime
+// le document room et LAISSE ses sous-collections orphelines pour toujours.
+// Et elle demande un accès à la console Google Cloud que l'on n'a pas
+// forcément. Donc l'hôte fait le ménage lui-même : il tient la liste des
+// parties qu'il a créées et supprime, au chargement suivant, celles dont la
+// date de péremption est passée — document ET sous-collections, via le même
+// deleteRoom() que le bouton « Annuler ».
+//
+// Portée : les parties créées depuis CE navigateur. Les règles Firestore
+// interdisent d'énumérer les rooms (et n'autorisent leur suppression qu'à leur
+// hôte), donc on ne peut pas balayer la base entière — c'est voulu.
+const HOST_HISTORY_KEY = 'blindie.host.history';
+const MAX_HISTORIQUE = 40;      // borne la taille du registre
+const MAX_TENTATIVES = 3;       // au-delà, on abandonne cette room
+const MAX_PURGES_PAR_CHARGEMENT = 5;
+
+const historique = {
+  lire() {
+    try {
+      const brut = JSON.parse(localStorage.getItem(HOST_HISTORY_KEY) || '[]');
+      return Array.isArray(brut)
+        ? brut.filter(e => e && typeof e.id === 'string' && typeof e.exp === 'number')
+        : [];
+    } catch {
+      return [];   // registre illisible : on repart de zéro, ce n'est pas critique
+    }
+  },
+  ecrire(liste) {
+    try {
+      localStorage.setItem(HOST_HISTORY_KEY, JSON.stringify(liste.slice(-MAX_HISTORIQUE)));
+    } catch { /* quota plein ou stockage refusé : la purge n'est pas vitale */ }
+  },
+  ajouter(id, expiresAtMs) {
+    const liste = historique.lire().filter(e => e.id !== id);
+    liste.push({ id, exp: expiresAtMs, tries: 0 });
+    historique.ecrire(liste);
+  },
+  retirer(id) {
+    historique.ecrire(historique.lire().filter(e => e.id !== id));
+  },
+};
+
+// Supprime les parties périmées. Volontairement silencieuse et bornée : c'est
+// du ménage d'arrière-plan, il ne doit jamais retarder ni casser l'affichage.
+async function purgerAnciennesParties() {
+  const depart = Date.now();
+  const maintenant = depart;
+  const liste = historique.lire();
+  const perimees = liste.filter(e => e.exp <= maintenant).slice(0, MAX_PURGES_PAR_CHARGEMENT);
+  if (!perimees.length) return;
+
+  for (const entree of perimees) {
+    // Jamais la partie en cours, même si sa date est passée : l'hôte peut
+    // très bien jouer une soirée qui dure plus de 24 h.
+    if (entree.id === state.roomId || entree.id === hostSession.get()) continue;
+    await avecDelaiMax(deleteRoom(entree.id), 8000);
+    // deleteRoom avale ses erreurs : on ne sait pas si ça a marché. On relit
+    // donc la room — absente, l'entrée a fait son travail.
+    const reste = await avecDelaiMax(roomExists(entree.id), 5000);
+    entree.tries = (entree.tries || 0) + 1;
+    if (reste === false || entree.tries >= MAX_TENTATIVES) historique.retirer(entree.id);
+  }
+  // Réécrit les compteurs de tentatives des entrées conservées.
+  const restantes = historique.lire().map(e => {
+    const maj = perimees.find(x => x.id === e.id);
+    return maj ? { ...e, tries: maj.tries } : e;
+  });
+  historique.ecrire(restantes);
+  // noteDebug attend une durée : on mesure le ménage plutôt que d'afficher NaN.
+  noteDebug(`purge de ${perimees.length} partie(s) périmée(s) en`, Date.now() - depart);
+}
+
 // === Init ===
 (async function init() {
   // Règle absolue : cette fonction se termine TOUJOURS sur un écran affiché.
@@ -254,6 +331,9 @@ const hostSession = {
     showError('import-error',
       "Connexion à la base impossible. Vérifie ta connexion et recharge la page.");
   }
+  // Ménage d'arrière-plan, après l'affichage : jamais dans le chemin critique.
+  // Sans le uid, les règles refuseraient de toute façon la suppression.
+  if (state.hostId) purgerAnciennesParties().catch(e => console.warn('Purge impossible', e));
 })();
 
 async function demarrer() {
@@ -566,6 +646,8 @@ $('btn-create-room').addEventListener('click', async () => {
     state.roomId = roomId;
     state.settings = settings;
     hostSession.set(roomId);
+    // Registre de purge : la même échéance que le champ expiresAt du document.
+    historique.ajouter(roomId, Date.now() + ROOM_TTL_MS);
     await addTracksToRoom(roomId, state.enriched);
     state.tracks = await fetchRoomTracks(roomId);
 
@@ -626,6 +708,7 @@ once($('btn-cancel-room'), async () => {
   if (state.unsubPlayers) state.unsubPlayers();
   if (state.unsubRoom) state.unsubRoom();
   hostSession.clear();
+  historique.retirer(state.roomId);
   await deleteRoom(state.roomId);
   window.location.href = './index.html';
 });
