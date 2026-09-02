@@ -13,22 +13,39 @@ import { firebaseConfig } from './config.js';
 
 export const app = initializeApp(firebaseConfig);
 
-// Firestore ouvre par défaut un flux WebChannel. Derrière certains réseaux —
-// proxy d'entreprise, VPN, antivirus qui inspecte le trafic, réseau mobile
-// filtrant — ce flux s'établit mais ne délivre rien : les écritures partent,
-// les snapshots n'arrivent qu'après une bascule tardive en long-polling. Vu
-// de l'utilisateur, l'app est simplement "lente", et un round peut mettre
-// une demi-minute à s'afficher chez un joueur.
+// Transport Firestore : long-polling forcé, requêtes de 5 secondes.
 //
-// La détection automatique est demandée explicitement, et on lui laisse un
-// délai court pour trancher plutôt que d'attendre l'expiration du flux.
+// Le flux temps réel de Firestore est une requête HTTP longue que le serveur
+// tient ouverte et dans laquelle il pousse les mises à jour au fil de l'eau.
+// Certains intermédiaires — proxy d'entreprise, antivirus qui inspecte le
+// trafic, VPN, réseau mobile — TAMPONNENT la réponse : ils n'en livrent le
+// contenu au navigateur qu'une fois la requête terminée. Or le serveur ne la
+// termine qu'à l'expiration de son timeout de long-polling, qui vaut 30 s par
+// défaut. Résultat observé chez nous : un round démarré par l'hôte s'affiche
+// chez le joueur 30 s plus tard, une simple lecture reste suspendue 30 s, et
+// « tout est lent » — toujours du même ordre de grandeur.
+//
+// La détection automatique du SDK (active par défaut) est censée repérer ce
+// cas ; elle ne l'a pas fait ici. On force donc le long-polling et on ramène
+// la durée de chaque requête à 5 s, le minimum accepté : un intermédiaire qui
+// tamponne ne peut plus retenir une mise à jour au-delà de 5 s. Le coût est
+// quelques requêtes HTTP de plus par minute — négligeable pour une partie
+// entre amis.
+//
+// Force et auto-détection s'excluent : le SDK refuse qu'on passe les deux.
+// Le tout est protégé : si ce build ne connaît pas ces options ou les
+// rejette, on retombe sur la configuration par défaut plutôt que de casser
+// le chargement de l'application.
 export const db = (() => {
   try {
     if (typeof fs.initializeFirestore === 'function') {
-      return fs.initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+      return fs.initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+        experimentalLongPollingOptions: { timeoutSeconds: 5 },
+      });
     }
   } catch (e) {
-    console.warn('initializeFirestore indisponible, repli sur getFirestore', e);
+    console.warn('Réglage du transport Firestore refusé, configuration par défaut', e);
   }
   return fs.getFirestore(app);
 })();
