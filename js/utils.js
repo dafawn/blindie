@@ -36,7 +36,7 @@ const TRAILING_DASH = new RegExp(
 const FEATURING = /\s*[\(\[]?\s*\b(?:feat\.?|ft\.?|featuring)\b.*$/i;
 
 // Casse, accents, ponctuation, espaces. Ne retire aucun mot.
-function plain(str) {
+export function plain(str) {
   return String(str ?? '')
     .toLowerCase()
     // Strip diacritics (à → a, é → e…) — U+0300–U+036F are combining marks

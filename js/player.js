@@ -325,9 +325,16 @@ async function handleRoomUpdate(room) {
         // Fetch the current track. previewUrl is included so we can play
         // the audio on each player's device — Blindie est conçu pour des
         // parties à distance, donc tout le monde a besoin du son.
-        state.currentTrackPublic = await fetchCurrentTrackPublic(room);
-        playLocalAudio();
-        startPlayerTimer(room);
+        const roundDemande = room.currentRoundIndex;
+        const track = await fetchCurrentTrackPublic(room);
+        // Si un round plus récent est arrivé pendant la lecture Firestore, ce
+        // track est périmé : le jouer ferait entendre le morceau précédent
+        // sur le round suivant.
+        if (state.currentRoundIndex === roundDemande) {
+          state.currentTrackPublic = track;
+          playLocalAudio();
+          startPlayerTimer(room);
+        }
       } else {
         startPlayerTimer(room);
       }

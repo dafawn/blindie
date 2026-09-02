@@ -128,7 +128,7 @@ export const appConfig = {
   pointsArtist: 1,
   maxRoundsPerGame: 20,
   maxNameLength: 16,
-  previewMatchThreshold: 0.65,   // seuil d'acceptation d'un match iTunes
+  previewMatchThreshold: 0.65,   // confiance pondérée minimale d'un extrait iTunes (cf. §10)
   matchThreshold: 0.75,          // seuil au-dessus duquel une réponse est juste
 };
 ```
@@ -210,6 +210,7 @@ npx serve -l 5500
 /js/host.js              Logique host (flow complet, scoring au reveal)
 /js/player.js            Logique joueur (téléphone)
 /tools/test-scoring.mjs  Banc de test du moteur de score
+/tools/test-previews.mjs Banc de test du choix d'extrait iTunes
 /tools/test-rules.mjs    Tests des règles Firestore (émulateur)
 /tools/generate-icons.mjs  icon.svg → PNG + favicon.ico (nécessite sharp)
 /icon.svg /favicon.svg   Sources des icônes
@@ -223,12 +224,20 @@ npx serve -l 5500
 
 ### Lancer les tests
 
-Deux suites, sur les deux endroits où un bug est invisible pendant la partie.
+Trois suites, sur les endroits où un bug est invisible pendant la partie.
 
 **Moteur de score** — 53 cas, aucune dépendance :
 
 ```bash
 node tools/test-scoring.mjs
+```
+
+**Choix de l'extrait iTunes** — 38 cas, aucune dépendance ni réseau. Rejoue
+des réponses iTunes typiques (original, karaoké, « tribute », homonyme d'un
+autre artiste, version live) et vérifie ce que la sélection retient ou refuse :
+
+```bash
+node tools/test-previews.mjs
 ```
 
 **Règles Firestore** — 30 cas contre l'émulateur. Vérifie le modèle anti-triche
@@ -297,8 +306,17 @@ Ce qui n'est PAS défendu (compromis assumés vu le contexte privé) :
 
 - **Spotify Web API en Development mode** (nov. 2024) : la réponse de `/playlists/{id}` est partiellement strippée — les clés `tracks` et `track` sont renommées en `items` et `item`. Le code gère les deux. `/playlists/{id}/tracks` renvoie un 403 et est contourné via l'embedding.
 - **Playlists éditoriales Spotify** (préfixe `37i9dQZF1...`) inaccessibles aux apps en Development mode depuis nov. 2024. Utilise une playlist user-créée.
-- **iTunes ≠ Spotify** : l'extrait joué peut être une version (live/remaster) du même morceau. Imperceptible 95 % du temps.
-- **Previews iTunes manquantes** : certains morceaux n'ont pas d'aperçu Apple — ils sont marqués "pas de preview" et exclus du jeu.
+- **iTunes ≠ Spotify** : l'extrait joué peut être une version (live/remaster) du
+  même morceau — la version studio est préférée quand elle existe. Un résultat
+  qui porte un marqueur de reprise (karaoké, tribute, « in the style of »,
+  instrumental, sped up…) ou dont l'artiste ne correspond pas est refusé :
+  mieux vaut un morceau de moins qu'un extrait qui n'est pas la bonne chanson.
+  La recherche interroge d'abord le magasin iTunes du pays de l'appareil, puis
+  le magasin américain. Ce qu'iTunes a retenu s'affiche sous chaque titre
+  pendant la préparation, pour que l'hôte puisse le vérifier avant de lancer.
+- **Extraits iTunes manquants** : certains morceaux n'ont pas d'aperçu Apple
+  fiable — ils sont marqués « aucun extrait fiable » et exclus du jeu. Cas
+  figés dans `tools/test-previews.mjs`.
 - **Autoplay audio mobile** : iOS/Android bloquent l'audio sans interaction. Un bouton "Activer le son" dans le lobby (et fallback en cas de late-join) débloque la session.
 - **CORS Deezer** : le fallback Deezer reste un stub (CORS bloque les appels directs). Brancher via un proxy serverless si besoin.
 - **Fautes de frappe sur un mot unique** : le scoring refuse « afrika » pour
@@ -335,6 +353,7 @@ Fait (audit d'août 2026, cf. [`AUDIT.md`](AUDIT.md)) :
 - [x] Un jeton Spotify mort déconnecte au lieu d'afficher « connecté »
 - [x] Liens Apple Music validés (https uniquement)
 - [x] Les previews de déploiement Netlify affichent un message explicite
+- [x] Extrait iTunes : reprises et homonymes refusés, artiste obligatoire, magasin local puis US (`tools/test-previews.mjs`)
 
 Reste à faire :
 
